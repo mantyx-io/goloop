@@ -1,0 +1,6 @@
+/goloop
+/dist
+*.exe
+.DS_Store
+example/.goloop/
+example/project/
