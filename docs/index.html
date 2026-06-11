@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>goloop — the agentic loop CLI</title>
+  <meta name="description" content="goloop is an open-source agentic loop CLI. A supervisor LLM plans each step, a worker (Cursor or Claude Code) ships the code, and state lives in plain markdown checkpoints." />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="goloop — the agentic loop CLI" />
+  <meta property="og:description" content="A supervisor LLM plans. A worker ships code. State lives in markdown. One static Go binary." />
+  <meta property="og:url" content="https://mantyx-io.github.io/goloop/" />
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='none' stroke='%23f5b13d' stroke-width='3.5' stroke-linecap='round' d='M24 9a11 11 0 1 0 3 8'/%3E%3Cpath fill='%23f5b13d' d='M22 4l6 2-2 6z'/%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- NAV -->
+  <header class="nav">
+    <a class="brand" href="#top" aria-label="goloop home">
+      <svg class="mark" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+        <path fill="none" stroke="#f5b13d" stroke-width="3.5" stroke-linecap="round" d="M24 9a11 11 0 1 0 3 8" />
+        <path fill="#f5b13d" d="M22 4l6 2-2 6z" />
+      </svg>
+      <span>goloop</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#install">Install</a>
+      <a href="#config">Config</a>
+      <a class="src-link" href="https://github.com/mantyx-io/goloop" target="_blank" rel="noopener">
+        github&nbsp;<span aria-hidden="true">↗</span>
+      </a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow reveal">// open source · MIT · single static binary</p>
+        <h1 class="reveal">The agentic loop,<br />on the command line.</h1>
+        <p class="lede reveal">
+          A <em>supervisor</em> model plans every iteration. A <em>worker</em> — Cursor or
+          Claude&nbsp;Code — does the edits. State lives in plain markdown you can read, diff, and
+          trust. Point it at a goal; walk away.
+        </p>
+
+        <div class="install reveal" data-copy="curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash">
+          <span class="sigil">❯</span>
+          <code>curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash</code>
+          <button class="copy-btn" type="button" aria-label="Copy install command">copy</button>
+        </div>
+
+        <div class="cta reveal">
+          <a class="btn primary" href="#install">Get started</a>
+          <a class="btn ghost" href="https://github.com/mantyx-io/goloop" target="_blank" rel="noopener">Star on GitHub</a>
+        </div>
+
+        <ul class="meta reveal">
+          <li><span class="k">build</span> Go 1.24+</li>
+          <li><span class="k">os</span> macOS · Linux · Windows</li>
+          <li><span class="k">deps</span> none</li>
+        </ul>
+      </div>
+
+      <div class="terminal reveal" aria-hidden="true">
+        <div class="term-bar">
+          <span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>
+          <span class="term-title">~/your-project — goloop run .</span>
+        </div>
+        <pre class="term-body" id="term"></pre>
+      </div>
+    </section>
+
+    <!-- FLOW -->
+    <section class="flow-wrap reveal">
+      <div class="flow">
+        <div class="flow-step">
+          <span class="flow-k">supervisor</span>
+          <span class="flow-v">plans the move, emits a JSON action</span>
+        </div>
+        <span class="flow-sep" aria-hidden="true">──▶</span>
+        <div class="flow-step">
+          <span class="flow-k">worker</span>
+          <span class="flow-v">edits the repo via Cursor / Claude Code</span>
+        </div>
+        <span class="flow-sep" aria-hidden="true">──▶</span>
+        <div class="flow-step">
+          <span class="flow-k">checkpoint</span>
+          <span class="flow-v">writes <code>.goloop/checkpoint.md</code></span>
+        </div>
+        <span class="flow-loop" aria-hidden="true">↺ until done</span>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features" class="section">
+      <header class="sec-head reveal">
+        <p class="eyebrow">// 01 — what's inside</p>
+        <h2>Built for autonomous coding,<br />not for a demo.</h2>
+      </header>
+
+      <div class="grid">
+        <article class="feat reveal">
+          <span class="idx">01</span>
+          <h3>Supervisor / worker split</h3>
+          <p>The planner never touches files. A dedicated worker does every edit — clean separation, predictable runs.</p>
+        </article>
+        <article class="feat reveal">
+          <span class="idx">02</span>
+          <h3>Pluggable backends</h3>
+          <p>Supervise with ChatGPT, OpenAI, or Anthropic. Execute with Cursor CLI or Claude Code. Swap freely.</p>
+        </article>
+        <article class="feat reveal">
+          <span class="idx">03</span>
+          <h3>State you can read</h3>
+          <p>No hidden database. Progress, blockers, and the iteration log are markdown files you can diff and edit.</p>
+        </article>
+        <article class="feat reveal">
+          <span class="idx">04</span>
+          <h3>Self-extending tools</h3>
+          <p>The loop can author its own supervisor tools, exit <code>75</code>, and auto-restart to pick them up.</p>
+        </article>
+        <article class="feat reveal">
+          <span class="idx">05</span>
+          <h3>Human in the loop</h3>
+          <p>When only you can answer, it stops and asks with <code>ask_user</code> instead of hallucinating a decision.</p>
+        </article>
+        <article class="feat reveal">
+          <span class="idx">06</span>
+          <h3>Honest terminal UI</h3>
+          <p>Streamed worker reasoning, a live iteration log, and full-screen wizards for setup — no spinners that lie.</p>
+        </article>
+        <article class="feat reveal">
+          <span class="idx">07</span>
+          <h3>Layered config</h3>
+          <p>Models &amp; auth once, globally. The goal per project. Flags override anything for a single run.</p>
+        </article>
+        <article class="feat reveal">
+          <span class="idx">08</span>
+          <h3>One static binary</h3>
+          <p>Written in Go. No runtime, no node_modules. <code>curl | bash</code> and you're working.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- HOW -->
+    <section id="how" class="section">
+      <header class="sec-head reveal">
+        <p class="eyebrow">// 02 — how it works</p>
+        <h2>Read checkpoint. Decide. Act.</h2>
+      </header>
+
+      <div class="how">
+        <ol class="steps">
+          <li class="reveal">
+            <span class="step-n">01</span>
+            <div>
+              <h4>Configure once</h4>
+              <p><code>goloop configure</code> picks your provider, models, and signs you in — saved to <code>~/.goloop/config.yaml</code>.</p>
+            </div>
+          </li>
+          <li class="reveal">
+            <span class="step-n">02</span>
+            <div>
+              <h4>Set a goal</h4>
+              <p><code>goloop init</code> (or <code>run</code> auto-init) captures the objective into the project's <code>.goloop/config.yaml</code>.</p>
+            </div>
+          </li>
+          <li class="reveal">
+            <span class="step-n">03</span>
+            <div>
+              <h4>Let it loop</h4>
+              <p><code>goloop run .</code> plans, delegates, evaluates, and checkpoints until the objective is met.</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="schema reveal">
+          <div class="schema-head">// supervisor action — every iteration</div>
+<pre class="code"><span class="c-p">{</span>
+  <span class="c-k">"action"</span>: <span class="c-s">"delegate"</span>,        <span class="c-c">// evaluate · ask_user ·</span>
+                              <span class="c-c">// delegate_tools · complete</span>
+  <span class="c-k">"phase"</span>:  <span class="c-s">"build"</span>,
+  <span class="c-k">"delegate_task"</span>: <span class="c-s">"Implement add/list/done commands"</span>,
+  <span class="c-k">"checkpoint_update"</span>: <span class="c-p">{</span>
+    <span class="c-k">"completed"</span>:  [<span class="c-s">"CLI scaffold"</span>],
+    <span class="c-k">"next_steps"</span>: [<span class="c-s">"persist todos to disk"</span>]
+  <span class="c-p">}</span>,
+  <span class="c-k">"status"</span>: <span class="c-s">"success"</span>
+<span class="c-p">}</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- INSTALL -->
+    <section id="install" class="section">
+      <header class="sec-head reveal">
+        <p class="eyebrow">// 03 — get started</p>
+        <h2>Running in under a minute.</h2>
+      </header>
+
+      <div class="install-grid">
+        <div class="panel reveal" data-copy="curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash">
+          <div class="panel-head"><span>install</span><button class="copy-btn" type="button">copy</button></div>
+<pre class="code"><span class="c-c"># macOS / Linux / WSL</span>
+curl -fsSL https://raw.githubusercontent.com/\
+mantyx-io/goloop/main/scripts/install.sh | bash
+
+<span class="c-c"># …or with Go</span>
+go install github.com/mantyx-io/goloop/cmd/goloop@latest</pre>
+        </div>
+
+        <div class="panel reveal" data-copy='goloop configure&#10;goloop login&#10;cd your-project&#10;goloop run . --goal "Build a todo CLI"'>
+          <div class="panel-head"><span>configure &amp; run</span><button class="copy-btn" type="button">copy</button></div>
+<pre class="code"><span class="c-c"># once: provider, models, sign-in</span>
+goloop configure
+goloop login
+
+<span class="c-c"># in your project</span>
+cd your-project
+goloop run . <span class="c-fl">--goal</span> <span class="c-s">"Build a todo CLI"</span></pre>
+        </div>
+      </div>
+
+      <div class="backends reveal">
+        <div class="backend-col">
+          <span class="backend-label">// supervisors</span>
+          <div class="chips">
+            <span class="chip">ChatGPT subscription</span>
+            <span class="chip">OpenAI API</span>
+            <span class="chip">Anthropic API</span>
+          </div>
+        </div>
+        <div class="backend-col">
+          <span class="backend-label">// workers</span>
+          <div class="chips">
+            <span class="chip">Cursor CLI</span>
+            <span class="chip">Claude Code</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONFIG -->
+    <section id="config" class="section">
+      <header class="sec-head reveal">
+        <p class="eyebrow">// 04 — configuration</p>
+        <h2>Plain YAML. Three layers.</h2>
+      </header>
+
+      <div class="conf reveal">
+        <div class="conf-row">
+          <span class="conf-tag">global</span>
+          <code>~/.goloop/config.yaml</code>
+          <span class="conf-desc">Provider, models, worker, loop defaults — set once.</span>
+        </div>
+        <div class="conf-row">
+          <span class="conf-tag">project</span>
+          <code>&lt;dir&gt;/.goloop/config.yaml</code>
+          <span class="conf-desc">The objective for this repo. Required to run.</span>
+        </div>
+        <div class="conf-row">
+          <span class="conf-tag">run</span>
+          <code>goloop run --goal …</code>
+          <span class="conf-desc">One-off overrides for a single invocation.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- CLOSER -->
+    <section class="closer reveal">
+      <div class="closer-inner">
+        <h2>Give your terminal a goal.</h2>
+        <p>Free and open source under the MIT license.</p>
+        <div class="install closer-install" data-copy="curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash">
+          <span class="sigil">❯</span>
+          <code>curl -fsSL …/install.sh | bash</code>
+          <button class="copy-btn" type="button" aria-label="Copy install command">copy</button>
+        </div>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/mantyx-io/goloop" target="_blank" rel="noopener">Get it on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <a class="brand" href="#top">
+      <svg class="mark" viewBox="0 0 32 32" width="18" height="18" aria-hidden="true">
+        <path fill="none" stroke="#f5b13d" stroke-width="3.5" stroke-linecap="round" d="M24 9a11 11 0 1 0 3 8" />
+        <path fill="#f5b13d" d="M22 4l6 2-2 6z" />
+      </svg>
+      <span>goloop</span>
+    </a>
+    <p>Built in Go with <a href="https://github.com/charmbracelet/bubbletea" target="_blank" rel="noopener">Bubble&nbsp;Tea</a>.</p>
+    <div class="footer-links">
+      <a href="https://github.com/mantyx-io/goloop" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/mantyx-io/goloop/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/mantyx-io/goloop/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

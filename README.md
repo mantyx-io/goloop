@@ -1,192 +1,230 @@
+<div align="center">
+
+<img src="docs/logo.svg" alt="Goloop" width="92" />
+
 # Goloop
 
-Agentic loop CLI in Go. A **supervisor** LLM plans each iteration; a **worker** (Cursor by default) executes code changes. Progress is tracked in `.goloop/checkpoint.md` with a rich terminal UI.
+**The agentic loop, in your terminal.**
 
-Repository: [github.com/mantyx-io/goloop](https://github.com/mantyx-io/goloop)
+A **supervisor** LLM plans every iteration. A **worker** — Cursor or Claude Code — ships the code.
+Progress lives in plain markdown checkpoints. Point it at a goal and let it run.
 
-Inspired by [frontier-experiment](https://github.com/vetro/frontier-experiment)'s Python `fiber-loop`.
+[![Release](https://img.shields.io/github/v/release/mantyx-io/goloop?color=818cf8&label=release)](https://github.com/mantyx-io/goloop/releases)
+[![CI](https://github.com/mantyx-io/goloop/actions/workflows/ci.yml/badge.svg)](https://github.com/mantyx-io/goloop/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/github/go-mod/go-version/mantyx-io/goloop?color=38bdf8&logo=go&logoColor=white)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-34d399.svg)](LICENSE)
 
-## Install
+[**Website**](https://mantyx-io.github.io/goloop/) · [**Install**](#-install) · [**Quick start**](#-quick-start) · [**How it works**](#-how-it-works) · [**Config**](#-configuration)
+
+</div>
+
+---
+
+```text
+   🧠  Supervisor              🛠️  Worker                 📝  Checkpoint
+   plans the next move   →     edits the repo      →     state persisted to
+   (JSON action)               (Cursor / Claude)         .goloop/checkpoint.md
+        ▲                                                       │
+        └───────────────────────────  loop  ───────────────────┘
+```
+
+Goloop runs a tight, observable agent loop. The supervisor never edits files; it reasons about the
+objective and emits a structured action each iteration. A worker carries out the actual code changes.
+All state — progress, blockers, the iteration log, human answers — is written to human-readable
+markdown you can diff, edit, and trust.
+
+## ✨ Highlights
+
+- **🔁 Supervisor / worker split** — the planner never touches files; a dedicated worker does the edits.
+- **🔌 Pluggable backends** — supervise with **ChatGPT**, **OpenAI**, or **Anthropic**; execute with **Cursor CLI** or **Claude Code**.
+- **📒 Markdown state** — no opaque DB; `.goloop/checkpoint.md` is the single source of truth.
+- **🧰 Self-extending tools** — the loop can write its own supervisor tools, exit with code `75`, and auto-restart to pick them up.
+- **🙋 Human-in-the-loop** — when only you can answer, it pauses with `ask_user` instead of guessing.
+- **🪄 Rich TUI** — streamed worker reasoning, a live iteration log, and full-screen wizards for `configure` / `init`.
+- **🧱 Layered config** — set models & auth once globally; set the goal per project; override per run.
+- **📦 One static binary** — no runtime, no dependencies. `curl | bash` and you're running.
+
+## 📦 Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash
 ```
 
-Install to `~/.local/bin` (no sudo):
+<details>
+<summary>Other install options</summary>
 
 ```bash
-INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash
-```
+# No sudo — install to ~/.local/bin
+INSTALL_DIR="$HOME/.local/bin" \
+  curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash
 
-Pin a release:
+# Pin a specific release
+curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash -s -- --version v1.0.1
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/mantyx-io/goloop/main/scripts/install.sh | bash -s -- --version v0.1.0
-```
-
-Pre-built binaries for `linux` and `darwin` (`amd64`, `arm64`) and `windows` (`amd64`) are published on [GitHub Releases](https://github.com/mantyx-io/goloop/releases).
-
-## Quick start
-
-```bash
-# Or build from source
+# With Go
 go install github.com/mantyx-io/goloop/cmd/goloop@latest
-
-# 1. Global defaults (once — models, provider, auth)
-goloop configure
-goloop login                    # ChatGPT subscription (device code)
-
-# 2. Per project — initialize
-cd your-project
-goloop init
-goloop init --yes --goal "Build a todo CLI" --iters 30
-
-# 3. Run the loop
-goloop run .
-goloop run . --iters=30
-goloop run . --goal "Ship MVP tonight"   # one-off objective
-goloop run . --dry-run
-
-# With auto-restart when tools are installed (exit code 75)
-./scripts/run-loop.sh .
 ```
 
-Other auth options:
+Pre-built binaries for **macOS**, **Linux** (`amd64`/`arm64`), and **Windows** (`amd64`) are on
+[GitHub Releases](https://github.com/mantyx-io/goloop/releases).
+</details>
+
+## 🚀 Quick start
 
 ```bash
-goloop login --browser          # Optional: localhost callback (conflicts with Codex)
-export OPENAI_API_KEY=sk-... && goloop login --api-key
+# 1. Global defaults — once. Pick provider, models, and sign in.
+goloop configure
+goloop login                              # ChatGPT subscription (device code)
+
+# 2. Point it at a goal and run.
+cd your-project
+goloop run . --goal "Build a todo CLI"
 ```
 
-## Configuration
+That's it. If the directory isn't set up yet, `goloop run` launches a short setup wizard and then
+continues into the loop automatically.
 
-Config is layered — set models once globally, set the goal per project:
+```bash
+goloop run .                              # uses the project's saved goal
+goloop run . --iters 30                   # cap iterations
+goloop run . --dry-run                    # validate config without calling models
+goloop run ./app -p "Focus on tests"      # extra instructions for this run
+
+./scripts/run-loop.sh .                   # auto-restart when tools are installed (exit 75)
+```
+
+## 🧠 How it works
+
+Each iteration the supervisor reads the checkpoint, decides what to do, and emits a JSON action:
+
+```jsonc
+{
+  "action": "delegate",          // delegate | evaluate | ask_user | delegate_tools | complete
+  "phase": "build",              // bootstrap | build | test | polish | integration
+  "delegate_task": "Implement add/list/done commands",
+  "checkpoint_update": {
+    "completed":  ["CLI scaffold"],
+    "next_steps": ["persist todos to disk"]
+  },
+  "status": "success"
+}
+```
+
+| Action | What happens |
+|--------|--------------|
+| `delegate` | Sends a focused task to the worker (builder role) to edit the repo |
+| `evaluate` | Runs the worker read-only to review progress against the objective |
+| `ask_user` | Pauses and asks the human a question (answers saved to `user_context.md`) |
+| `delegate_tools` | Worker writes a new supervisor tool under `.goloop/tools/`; loop restarts (exit `75`) |
+| `complete` | Objective achieved end-to-end — the loop stops |
+
+Worker **role prompts** (builder / evaluator / toolsmith) are built into goloop, so a fresh project
+needs no extra files. To customize a role, drop a `<role>.md` agent file (e.g. `builder.md`) into
+`.cursor/agents/` or `.claude/agents/` and it will be used instead of the default.
+
+## 🔐 Authentication
+
+| Method | Command | Notes |
+|--------|---------|-------|
+| ChatGPT subscription | `goloop login` | Device-code flow (default, no port conflicts) |
+| Browser callback | `goloop login --browser` | Uses `localhost:1455` (may conflict with Codex) |
+| OpenAI API key | `goloop login --api-key` | Platform usage billing |
+| Anthropic API key | `export ANTHROPIC_API_KEY=…` | Claude supervisor via API |
+| Existing Codex CLI | _automatic_ | Reads `~/.codex/auth.json` |
+
+Credentials are stored in `~/.goloop/auth.json` (Codex-compatible). Check status with
+`goloop login status`.
+
+## 🧱 Configuration
+
+Config is layered — set models once globally, set the goal per project, override per run:
 
 | Layer | Path | Purpose |
 |-------|------|---------|
-| Global | `~/.goloop/config.yaml` | Supervisor, worker, models, loop defaults |
-| Project | `<dir>/.goloop/config.yaml` | `objective` / `goal` (required to run) |
-| Legacy | `goloop.yaml` | Still supported for older projects |
+| **Global** | `~/.goloop/config.yaml` | Supervisor, worker, models, loop defaults |
+| **Project** | `<dir>/.goloop/config.yaml` | `objective` / `goal` (required to run) |
+| **Run flags** | `goloop run --goal …` | One-off overrides for a single run |
 
 Runtime state always lives under `<dir>/.goloop/` (`checkpoint.md`, `user_context.md`, `tools/`).
+See [`example/global-config.example.yaml`](example/global-config.example.yaml) and
+[`example/.goloop/config.yaml`](example/.goloop/config.yaml).
 
-See `example/global-config.example.yaml` and `example/.goloop/config.yaml`.
+<details>
+<summary>Config sections</summary>
 
 | Section | Purpose |
 |---------|---------|
 | `objective` / `goal` | Mission statement (project layer) |
-| `supervisor` | Planning LLM (`chatgpt`, `openai`, or `anthropic`) |
-| `worker` | Execution backend (`cursor` or `claude_code`) |
+| `supervisor` | Planning LLM — `chatgpt`, `openai`, or `anthropic` |
+| `worker` | Execution backend — `cursor` or `claude_code` |
 | `cursor` | Cursor CLI binary and model |
 | `claude_code` | Claude Code CLI binary and model |
-| `loop` | Iteration limits, pause, interactivity |
+| `loop` | Iteration limit, pause, interactivity |
 | `paths` | Output dir (checkpoint paths default under `.goloop/`) |
 | `tools` | Tool directory and restart exit code |
+</details>
 
-Override per run with `goloop run` flags (`--goal`, `--iters`, model overrides, etc.).
+## 🛠️ Commands
 
-## Architecture
-
-```
-Supervisor (ChatGPT/OpenAI/Anthropic)  →  JSON plan each iteration
-        ↓
-Actions: delegate | evaluate | ask_user | delegate_tools | complete
-        ↓
-Worker (Cursor CLI)  →  edits files in the project root (configurable output dir)
-        ↓
-.goloop/checkpoint.md  ←  progress, blockers, iteration log
-.goloop/user_context.md ←  human answers
+```text
+goloop run [directory]        Run the agentic loop (default: .)
+goloop configure [directory]  Global or project config (full-screen TUI wizard)
+goloop init [directory]       Initialize a project (.goloop/config.yaml)
+goloop login                  Authenticate the supervisor
+goloop version                Print version
 ```
 
-Loop state lives under `.goloop/` in the target directory. Worker role prompts (builder/evaluator/toolsmith) are built into goloop; you can optionally override any role with a `<role>.md` agent file in `.cursor/agents/` or `.claude/agents/`.
+<details>
+<summary><code>goloop run</code> flags</summary>
 
-## Authentication
-
-| Method | Command | Billing |
-|--------|---------|---------|
-| ChatGPT subscription | `goloop login` | Device code (default CLI flow) |
-| Browser callback | `goloop login --browser` | Uses localhost:1455 (may conflict with Codex) |
-| OpenAI API key | `goloop login --api-key` | Platform usage billing |
-| Anthropic API key | `export ANTHROPIC_API_KEY=...` | Claude supervisor via API |
-| Existing Codex CLI | (automatic) | Reads `~/.codex/auth.json` |
-
-Set `supervisor.backend: chatgpt` in your global config to use your ChatGPT subscription. Credentials are stored in `~/.goloop/auth.json` (Codex-compatible format).
-
-Check status: `goloop login status`
-
-## Commands
-
+```text
+--goal, -g          Objective for this run (overrides project config)
+--iters             Max iterations (alias: --max-iterations)
+-p, --prompt        Extra instructions for this run
+--prompt-file       Read extra instructions from a file
+--reset             Wipe .goloop state and output dir
+--dry-run           Validate config without calling models
+--plain             Disable rich UI
+--no-interactive    Never prompt stdin (ask_user → blocker)
+--supervisor-backend / --supervisor-model
+--worker-backend / --cursor-model / --claude-code-model
 ```
-goloop run [directory]       Run the agentic loop (default directory: .)
-goloop configure [directory] Global or project config
-goloop init [directory]      Initialize project (.goloop/, agents)
-goloop login                 Authenticate for the supervisor
-goloop version               Print version
-```
+</details>
 
-### `goloop init`
+<details>
+<summary><code>goloop configure</code> &amp; <code>goloop init</code></summary>
 
-Project-level setup wizard (goal, output dir, iterations, interactive mode). Creates `.goloop/config.yaml`. Worker role prompts (builder/evaluator/toolsmith) are built in — no agent files are scaffolded.
-
-```
-goloop init
-goloop init . --yes --goal "Build a REST API" --iters 40 --output-dir app
-
-  --goal              Project objective
-  --output-dir        Worker output directory (default: . — project root)
-  --iters             Max iterations per run
-  --interactive       Prompt stdin on ask_user (default: true)
-  --no-interactive    Disable interactive mode
-  --yes               Skip TUI
+```text
+goloop configure            # global defaults → ~/.goloop/config.yaml
+goloop configure .          # project objective → .goloop/config.yaml
+goloop init                 # project setup wizard (goal, output dir, iters)
+goloop init --yes --goal "Build a REST API" --iters 40
 ```
 
-> Worker prompts are built in. To customize a role, drop a `<role>.md` agent file
-> (e.g. `builder.md`) into `.cursor/agents/` or `.claude/agents/` and it will be used
-> instead of the default.
+TUI keys: `enter` select · `tab` next · `shift+tab` / `esc` back · `/` filter models · `ctrl+c` quit
+</details>
 
-### `goloop run`
+## 🤝 Contributing
 
-```
-goloop run . --iters=30
-goloop run ./app -p "Focus on tests" --reset --dry-run
+Contributions are welcome! To hack on goloop:
 
-  --goal, -g          Objective for this run (overrides project config)
-  --iters             Max iterations (alias: --max-iterations)
-  -p, --prompt        Extra instructions for this run
-  --prompt-file       Read extra instructions from file
-  --reset             Wipe .goloop state and output dir
-  --dry-run           Validate config without calling models
-  --plain             Disable rich UI
-  --no-interactive    Never prompt stdin (ask_user → blocker)
-  --supervisor-backend / --supervisor-model
-  --worker-backend / --cursor-model
+```bash
+git clone https://github.com/mantyx-io/goloop
+cd goloop
+go build ./...
+go test ./...
+
+# Build & install a local dev binary as `goloop-dev`
+./scripts/local-install.sh
 ```
 
-### `goloop configure`
+Please open an issue to discuss substantial changes before sending a PR, keep `go test ./...` green,
+and run `gofmt`.
 
-Launches a full-screen TUI wizard:
+## 🙏 Acknowledgements
 
-- **`goloop configure`** (global) — provider, auth, models, iterations → `~/.goloop/config.yaml`
-- **`goloop configure .`** (project) — objective (+ optional overrides) → `.goloop/config.yaml`
+Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and friends.
 
-Project wizard steps: objective → provider → auth → supervisor model → worker model → iterations → review.
+## 📄 License
 
-```
-goloop configure
-goloop configure .
-goloop configure . --yes --objective "Build a todo CLI" --iters 50
-
-  --global            Write global defaults (default when no directory given)
-  --yes               Skip TUI (flags / existing config only)
-  --plain             Non-TTY fallback
-  --objective         Project goal
-  --supervisor-backend / --supervisor-model
-  --worker-backend / --cursor-model
-  --iters             Default max iterations
-```
-
-TUI keys: `ctrl+enter` continue · `/` focus model search · `enter` select · `esc` back · `ctrl+c` quit
-
-## License
-
-MIT
+[MIT](LICENSE) © The Goloop Authors

@@ -294,7 +294,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.step {
 	case stepObjective:
 		m.objective, cmd = m.objective.Update(msg)
-	case stepBackend, stepAuth:
+	case stepBackend, stepWorkerBackend, stepAuth:
 		if m.loading && m.step == stepAuth {
 			return m, nil
 		}

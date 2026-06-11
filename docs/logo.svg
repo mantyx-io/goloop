@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="goloop logo">
+  <path fill="none" stroke="#f5b13d" stroke-width="7" stroke-linecap="round"
+        d="M48 18a22 22 0 1 0 6 16" />
+  <path fill="#f5b13d" d="M44 7l13 4-4 13z" />
+</svg>
