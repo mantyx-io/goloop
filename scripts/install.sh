@@ -95,25 +95,40 @@ trap 'rm -rf "$TMPDIR"' EXIT
 need_cmd curl
 need_cmd mkdir
 need_cmd chmod
+need_cmd find
+
+# find_binary EXT — locate the extracted binary, tolerating both the canonical
+# name (goloop / goloop.exe) and the older per-target name (goloop-os-arch[.exe]).
+find_binary() {
+  local ext="$1"
+  for candidate in "${TMPDIR}/goloop${ext}" "${TMPDIR}/${ASSET}${ext}"; do
+    if [[ -f "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  # Fallback: first regular file that isn't the downloaded archive.
+  find "$TMPDIR" -maxdepth 1 -type f ! -name '*.tar.gz' ! -name '*.zip' | head -n1
+}
 
 if [[ "$OS" == "windows" ]]; then
   need_cmd unzip
   ARCHIVE="${TMPDIR}/${ASSET}.zip"
   curl -fsSL -o "$ARCHIVE" "https://github.com/${REPO}/releases/download/${TAG}/${ASSET}.zip"
   unzip -q "$ARCHIVE" -d "$TMPDIR"
-  BIN="${TMPDIR}/goloop.exe"
+  BIN="$(find_binary .exe)"
   DEST="${INSTALL_DIR}/goloop.exe"
 else
   need_cmd tar
   ARCHIVE="${TMPDIR}/${ASSET}.tar.gz"
   curl -fsSL -o "$ARCHIVE" "https://github.com/${REPO}/releases/download/${TAG}/${ASSET}.tar.gz"
   tar -xzf "$ARCHIVE" -C "$TMPDIR"
-  BIN="${TMPDIR}/goloop"
+  BIN="$(find_binary '')"
   DEST="${INSTALL_DIR}/goloop"
 fi
 
-if [[ ! -f "$BIN" ]]; then
-  echo "error: binary not found in release archive" >&2
+if [[ -z "$BIN" || ! -f "$BIN" ]]; then
+  echo "error: binary not found in release archive (${ASSET})" >&2
   exit 1
 fi
 
