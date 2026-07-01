@@ -666,7 +666,7 @@ func (m model) View() string {
 
 	b.WriteString("\n")
 	if m.errMsg != "" {
-		b.WriteString(errStyle.Render("✗ " + m.errMsg) + "\n")
+		b.WriteString(errStyle.Render("✗ "+m.errMsg) + "\n")
 	}
 	if m.status != "" && !m.loading {
 		b.WriteString(okStyle.Render(m.status) + "\n")

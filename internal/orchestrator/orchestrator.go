@@ -78,12 +78,12 @@ func (e *RestartForTools) Error() string {
 }
 
 type Orchestrator struct {
-	cfg          *config.Config
-	display      *display.Display
-	supervisor   llm.Client
-	worker       worker.Runner
-	userContext  *usercontext.Store
-	checkpoint   *checkpoint.Checkpoint
+	cfg         *config.Config
+	display     *display.Display
+	supervisor  llm.Client
+	worker      worker.Runner
+	userContext *usercontext.Store
+	checkpoint  *checkpoint.Checkpoint
 }
 
 func New(cfg *config.Config, disp *display.Display) (*Orchestrator, error) {
@@ -154,7 +154,11 @@ func (o *Orchestrator) Run(ctx context.Context, maxIterations int) error {
 			return nil
 		}
 
-		time.Sleep(time.Duration(o.cfg.PauseSeconds) * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(o.cfg.PauseSeconds) * time.Second):
+		}
 	}
 
 	return nil
@@ -174,8 +178,6 @@ func (o *Orchestrator) planIteration(ctx context.Context, iteration int, extraNo
 }
 
 func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[string]any, allowFollowUp bool) (map[string]any, error) {
-	_ = ctx
-
 	action := str(plan, "action", "checkpoint_only")
 	status := str(plan, "status", "partial")
 	summary := str(plan, "summary", str(plan, "reasoning", "No summary provided."))
@@ -233,7 +235,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 				task,
 			))
 			result, err := o.runWorker(func() (worker.Result, error) {
-				return o.worker.RunToolsmith(task)
+				return o.worker.RunToolsmith(ctx, task)
 			}, "Running toolsmith…")
 			if err != nil {
 				return plan, err
@@ -261,7 +263,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 			outputName := filepath.Base(o.cfg.OutputDir)
 			task = o.workerTask(fmt.Sprintf("Build all artifacts under `%s/`.\n\n%s", outputName, task))
 			result, err := o.runWorker(func() (worker.Result, error) {
-				return o.worker.RunBuilder(task)
+				return o.worker.RunBuilder(ctx, task)
 			}, fmt.Sprintf("Running %s worker…", o.cfg.WorkerBackend))
 			if err != nil {
 				return plan, err
@@ -284,7 +286,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 			defaultString(criteria, "standard milestone checklist"),
 		))
 		result, err := o.runWorker(func() (worker.Result, error) {
-			return o.worker.RunEvaluator(evalTask)
+			return o.worker.RunEvaluator(ctx, evalTask)
 		}, fmt.Sprintf("Running %s evaluator…", o.cfg.WorkerBackend))
 		if err != nil {
 			return plan, err
@@ -415,7 +417,7 @@ func treeSummary(root, label string, maxDepth int) string {
 	}
 	result := strings.Join(lines, "\n")
 	if len(lines) >= 80 {
-		return result
+		result += "\n... [truncated]"
 	}
 	return result
 }

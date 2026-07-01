@@ -11,9 +11,9 @@ import (
 var frontmatterRE = regexp.MustCompile(`(?s)^---\s*\n(.*?)\n---\s*\n(.*)$`)
 
 type Definition struct {
-	Name          string
-	SystemPrompt  string
-	ApprovalMode  string
+	Name         string
+	SystemPrompt string
+	ApprovalMode string
 }
 
 // Role identifies the worker role the supervisor is delegating to.

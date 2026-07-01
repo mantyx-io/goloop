@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -18,15 +19,15 @@ type Entry struct {
 }
 
 type Checkpoint struct {
-	Path        string
-	Goal        string
-	Phase       string
-	Iteration   int
-	Completed   []string
-	InProgress  []string
-	Blockers    []string
-	NextSteps   []string
-	History     []Entry
+	Path       string
+	Goal       string
+	Phase      string
+	Iteration  int
+	Completed  []string
+	InProgress []string
+	Blockers   []string
+	NextSteps  []string
+	History    []Entry
 }
 
 func New(path, goal string) *Checkpoint {
@@ -152,8 +153,27 @@ func writeList(b *strings.Builder, title string, items []string, empty string) {
 	b.WriteString("\n")
 }
 
+var historyHeaderRE = regexp.MustCompile(`^### Iteration (\d+) — (.+) \(([^()]*)\)$`)
+
 func (c *Checkpoint) parse(text string) {
 	var section string
+	var entry *Entry
+	var summaryLines, noteLines []string
+	inNotes := false
+
+	flushEntry := func() {
+		if entry == nil {
+			return
+		}
+		entry.Summary = strings.TrimSpace(strings.Join(summaryLines, "\n"))
+		notes := strings.TrimSpace(strings.Join(noteLines, "\n"))
+		entry.Notes = strings.TrimSuffix(notes, "_")
+		c.History = append(c.History, *entry)
+		entry = nil
+		summaryLines, noteLines = nil, nil
+		inNotes = false
+	}
+
 	for _, line := range strings.Split(text, "\n") {
 		stripped := strings.TrimSpace(line)
 		switch {
@@ -175,8 +195,27 @@ func (c *Checkpoint) parse(text string) {
 		case stripped == "## Next Steps":
 			section = "next_steps"
 			c.NextSteps = nil
+		case stripped == "## Iteration Log":
+			section = "history"
+			c.History = nil
 		case strings.HasPrefix(stripped, "## "):
+			flushEntry()
 			section = ""
+		case section == "history":
+			if m := historyHeaderRE.FindStringSubmatch(stripped); m != nil {
+				flushEntry()
+				n, _ := strconv.Atoi(m[1])
+				entry = &Entry{Iteration: n, Action: m[2], Status: m[3]}
+			} else if entry != nil && stripped != "" {
+				if strings.HasPrefix(stripped, "_Notes:") {
+					inNotes = true
+					noteLines = append(noteLines, strings.TrimSpace(strings.TrimPrefix(stripped, "_Notes:")))
+				} else if inNotes {
+					noteLines = append(noteLines, stripped)
+				} else {
+					summaryLines = append(summaryLines, stripped)
+				}
+			}
 		case section != "" && strings.HasPrefix(stripped, "- ") && !strings.HasPrefix(stripped, "- _"):
 			item := strings.TrimSpace(stripped[2:])
 			switch section {
@@ -191,4 +230,5 @@ func (c *Checkpoint) parse(text string) {
 			}
 		}
 	}
+	flushEntry()
 }

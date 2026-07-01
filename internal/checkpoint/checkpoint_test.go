@@ -22,6 +22,13 @@ func TestCheckpointRoundTrip(t *testing.T) {
 		Summary:   "Started work",
 		Status:    "partial",
 	})
+	ckpt.AppendHistory(Entry{
+		Iteration: 2,
+		Action:    "evaluate",
+		Summary:   "Reviewed progress\nacross two lines",
+		Status:    "success",
+		Notes:     "exit=0\nall checks passed",
+	})
 
 	if err := ckpt.Save(); err != nil {
 		t.Fatal(err)
@@ -40,6 +47,38 @@ func TestCheckpointRoundTrip(t *testing.T) {
 	}
 	if len(loaded.Blockers) != 1 {
 		t.Fatalf("blockers: %#v", loaded.Blockers)
+	}
+	if len(loaded.History) != 2 {
+		t.Fatalf("history: %#v", loaded.History)
+	}
+	first, second := loaded.History[0], loaded.History[1]
+	if first.Iteration != 1 || first.Action != "delegate" || first.Status != "partial" || first.Summary != "Started work" {
+		t.Fatalf("history[0]: %#v", first)
+	}
+	if second.Iteration != 2 || second.Action != "evaluate" || second.Status != "success" {
+		t.Fatalf("history[1]: %#v", second)
+	}
+	if second.Summary != "Reviewed progress\nacross two lines" {
+		t.Fatalf("history[1] summary: %q", second.Summary)
+	}
+	if second.Notes != "exit=0\nall checks passed" {
+		t.Fatalf("history[1] notes: %q", second.Notes)
+	}
+	if loaded.Iteration != 2 {
+		t.Fatalf("iteration: %d", loaded.Iteration)
+	}
+
+	// Saving again after a restart must not drop previously logged iterations.
+	loaded.AppendHistory(Entry{Iteration: 3, Action: "delegate", Summary: "More work", Status: "partial"})
+	if err := loaded.Save(); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := New(path, "ignored")
+	if err := reloaded.Read(); err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.History) != 3 {
+		t.Fatalf("history after restart: %#v", reloaded.History)
 	}
 }
 

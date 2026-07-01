@@ -12,9 +12,9 @@ import (
 type SupervisorBackend string
 
 const (
-	SupervisorOpenAI     SupervisorBackend = "openai"
-	SupervisorChatGPT    SupervisorBackend = "chatgpt"
-	SupervisorAnthropic  SupervisorBackend = "anthropic"
+	SupervisorOpenAI    SupervisorBackend = "openai"
+	SupervisorChatGPT   SupervisorBackend = "chatgpt"
+	SupervisorAnthropic SupervisorBackend = "anthropic"
 )
 
 type WorkerBackend string
@@ -35,15 +35,15 @@ type Config struct {
 	SupervisorBaseURL     string
 	SupervisorAuthPath    string
 
-	WorkerBackend          WorkerBackend
-	WorkerBuilderAgent     string
-	WorkerEvaluatorAgent   string
-	WorkerToolsmithAgent   string
-	WorkerTimeoutSeconds   int
-	WorkerShowReasoning    bool
-	WorkerAgentsDir        string
-	ToolsRestartExitCode   int
-	ToolsDir               string
+	WorkerBackend        WorkerBackend
+	WorkerBuilderAgent   string
+	WorkerEvaluatorAgent string
+	WorkerToolsmithAgent string
+	WorkerTimeoutSeconds int
+	WorkerShowReasoning  bool
+	WorkerAgentsDir      string
+	ToolsRestartExitCode int
+	ToolsDir             string
 
 	CursorBinary     string
 	CursorModel      string
