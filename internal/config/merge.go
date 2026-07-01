@@ -169,6 +169,12 @@ func mergeLoop(dst, src *loopYAML) {
 	if src.Interactive != nil {
 		dst.Interactive = src.Interactive
 	}
+	if src.AuditCompletion != nil {
+		dst.AuditCompletion = src.AuditCompletion
+	}
+	if src.Notifications != nil {
+		dst.Notifications = src.Notifications
+	}
 	if src.AdditionalPrompt != "" {
 		dst.AdditionalPrompt = src.AdditionalPrompt
 	}

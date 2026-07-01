@@ -29,3 +29,5 @@ loop:
   max_iterations: 50
   pause_seconds: 2
   interactive: true
+  audit_completion: true   # verify `complete` claims with a read-only evaluator pass
+  notifications: true      # desktop notification on ask_user / completion
