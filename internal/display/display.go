@@ -19,12 +19,12 @@ var (
 		"failed":  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9")),
 	}
 	actionStyles = map[string]lipgloss.Style{
-		"delegate":         lipgloss.NewStyle().Foreground(lipgloss.Color("14")),
-		"delegate_tools":   lipgloss.NewStyle().Foreground(lipgloss.Color("51")),
-		"evaluate":         lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
-		"ask_user":         lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
-		"checkpoint_only":  lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
-		"complete":         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10")),
+		"delegate":        lipgloss.NewStyle().Foreground(lipgloss.Color("14")),
+		"delegate_tools":  lipgloss.NewStyle().Foreground(lipgloss.Color("51")),
+		"evaluate":        lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
+		"ask_user":        lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
+		"checkpoint_only": lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		"complete":        lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10")),
 	}
 	panelStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -34,14 +34,14 @@ var (
 )
 
 type Display struct {
-	RichOutput              bool
-	Interactive             bool
-	mu                      sync.Mutex
-	workerStreamReasoning   bool
-	workerStreamResponse    bool
-	workerReasoningShown    bool
-	mdRenderer              *glamour.TermRenderer
-	width                   int
+	RichOutput            bool
+	Interactive           bool
+	mu                    sync.Mutex
+	workerStreamReasoning bool
+	workerStreamResponse  bool
+	workerReasoningShown  bool
+	mdRenderer            *glamour.TermRenderer
+	width                 int
 }
 
 func New(plain, noInteractive bool) *Display {

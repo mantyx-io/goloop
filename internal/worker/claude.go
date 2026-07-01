@@ -23,19 +23,19 @@ func NewClaudeCode(cfg *config.Config, disp *display.Display) *ClaudeCode {
 	return &ClaudeCode{cfg: cfg, display: disp}
 }
 
-func (c *ClaudeCode) RunBuilder(task string) (Result, error) {
-	return c.run(task, agent.RoleBuilder, false)
+func (c *ClaudeCode) RunBuilder(ctx context.Context, task string) (Result, error) {
+	return c.run(ctx, task, agent.RoleBuilder, false)
 }
 
-func (c *ClaudeCode) RunEvaluator(task string) (Result, error) {
-	return c.run(task, agent.RoleEvaluator, true)
+func (c *ClaudeCode) RunEvaluator(ctx context.Context, task string) (Result, error) {
+	return c.run(ctx, task, agent.RoleEvaluator, true)
 }
 
-func (c *ClaudeCode) RunToolsmith(task string) (Result, error) {
-	return c.run(task, agent.RoleToolsmith, false)
+func (c *ClaudeCode) RunToolsmith(ctx context.Context, task string) (Result, error) {
+	return c.run(ctx, task, agent.RoleToolsmith, false)
 }
 
-func (c *ClaudeCode) run(task string, role agent.Role, readOnly bool) (Result, error) {
+func (c *ClaudeCode) run(ctx context.Context, task string, role agent.Role, readOnly bool) (Result, error) {
 	cmd := []string{
 		c.cfg.ClaudeCodeBinary,
 		"-p",
@@ -64,16 +64,16 @@ func (c *ClaudeCode) run(task string, role agent.Role, readOnly bool) (Result, e
 	cmd = append(cmd, prompt)
 
 	if useStream {
-		return c.runStreaming(cmd)
+		return c.runStreaming(ctx, cmd)
 	}
-	return c.runCapture(cmd)
+	return c.runCapture(ctx, cmd)
 }
 
-func (c *ClaudeCode) runCapture(cmd []string) (Result, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.WorkerTimeoutSeconds)*time.Second)
+func (c *ClaudeCode) runCapture(ctx context.Context, cmd []string) (Result, error) {
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(c.cfg.WorkerTimeoutSeconds)*time.Second)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
+	command := exec.CommandContext(runCtx, cmd[0], cmd[1:]...)
 	command.Dir = c.cfg.ProjectRoot
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
@@ -82,11 +82,13 @@ func (c *ClaudeCode) runCapture(cmd []string) (Result, error) {
 	err := command.Run()
 	rc := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			rc = exitErr.ExitCode()
-		} else if ctx.Err() == context.DeadlineExceeded {
+		if runCtx.Err() == context.DeadlineExceeded {
 			rc = 124
 			stderr.WriteString("claude timed out")
+		} else if ctx.Err() != nil {
+			return Result{}, ctx.Err()
+		} else if exitErr, ok := err.(*exec.ExitError); ok {
+			rc = exitErr.ExitCode()
 		} else {
 			return Result{}, err
 		}
@@ -100,15 +102,15 @@ func (c *ClaudeCode) runCapture(cmd []string) (Result, error) {
 	}, nil
 }
 
-func (c *ClaudeCode) runStreaming(cmd []string) (Result, error) {
+func (c *ClaudeCode) runStreaming(ctx context.Context, cmd []string) (Result, error) {
 	if c.display != nil {
 		c.display.BeginWorkerStream()
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.WorkerTimeoutSeconds)*time.Second)
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(c.cfg.WorkerTimeoutSeconds)*time.Second)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
+	command := exec.CommandContext(runCtx, cmd[0], cmd[1:]...)
 	command.Dir = c.cfg.ProjectRoot
 
 	stdout, err := command.StdoutPipe()
@@ -141,12 +143,13 @@ func (c *ClaudeCode) runStreaming(cmd []string) (Result, error) {
 	waitErr := command.Wait()
 	rc := 0
 	if waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			rc = exitErr.ExitCode()
-		} else if ctx.Err() == context.DeadlineExceeded {
+		if runCtx.Err() == context.DeadlineExceeded {
 			rc = 124
 			stderr.WriteString("claude timed out")
-			_ = command.Process.Kill()
+		} else if ctx.Err() != nil {
+			return Result{}, ctx.Err()
+		} else if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			rc = exitErr.ExitCode()
 		} else {
 			return Result{}, waitErr
 		}

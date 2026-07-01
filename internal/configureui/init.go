@@ -300,7 +300,7 @@ func (m initModel) View() string {
 
 	b.WriteString("\n")
 	if m.errMsg != "" {
-		b.WriteString(errStyle.Render("✗ " + m.errMsg) + "\n")
+		b.WriteString(errStyle.Render("✗ "+m.errMsg) + "\n")
 	}
 	b.WriteString(hintStyle.Render(m.initHints()))
 	return b.String()

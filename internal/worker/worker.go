@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/mantyx-io/goloop/internal/agent"
@@ -21,9 +22,9 @@ func (r Result) OK() bool {
 }
 
 type Runner interface {
-	RunBuilder(task string) (Result, error)
-	RunEvaluator(task string) (Result, error)
-	RunToolsmith(task string) (Result, error)
+	RunBuilder(ctx context.Context, task string) (Result, error)
+	RunEvaluator(ctx context.Context, task string) (Result, error)
+	RunToolsmith(ctx context.Context, task string) (Result, error)
 }
 
 func New(cfg *config.Config, disp *display.Display) (Runner, error) {

@@ -55,16 +55,16 @@ func (c *ChatGPTClient) ChatJSON(ctx context.Context, messages []Message) (map[s
 	}
 
 	payload := map[string]any{
-		"model":                 c.Model,
-		"instructions":          instructions,
-		"input":                 input,
-		"tools":                 []any{},
-		"tool_choice":           "auto",
-		"parallel_tool_calls":   false,
-		"stream":                true,
-		"store":                 false,
-		"include":               []any{},
-		"text":                  map[string]any{"format": map[string]string{"type": "json_object"}},
+		"model":               c.Model,
+		"instructions":        instructions,
+		"input":               input,
+		"tools":               []any{},
+		"tool_choice":         "auto",
+		"parallel_tool_calls": false,
+		"stream":              true,
+		"store":               false,
+		"include":             []any{},
+		"text":                map[string]any{"format": map[string]string{"type": "json_object"}},
 	}
 
 	text, err := c.postResponses(ctx, payload)
@@ -126,8 +126,8 @@ func (c *ChatGPTClient) headers() map[string]string {
 		"Authorization":      "Bearer " + c.creds.AccessToken,
 		"ChatGPT-Account-Id": c.creds.AccountID,
 		"Content-Type":       "application/json",
-		"originator":           "codex_cli_rs",
-		"User-Agent":           codexUserAgent(),
+		"originator":         "codex_cli_rs",
+		"User-Agent":         codexUserAgent(),
 	}
 	if c.creds.FedRAMP {
 		headers["X-OpenAI-Fedramp"] = "true"

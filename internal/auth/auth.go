@@ -16,26 +16,26 @@ const (
 )
 
 type Credentials struct {
-	Path              string
-	Mode              string // "chatgpt" or "api_key"
-	APIKey            string
-	AnthropicAPIKey   string
-	AccessToken  string
-	RefreshToken string
-	IDToken      string
-	AccountID    string
-	FedRAMP      bool
-	ExpiresAt    time.Time
+	Path            string
+	Mode            string // "chatgpt" or "api_key"
+	APIKey          string
+	AnthropicAPIKey string
+	AccessToken     string
+	RefreshToken    string
+	IDToken         string
+	AccountID       string
+	FedRAMP         bool
+	ExpiresAt       time.Time
 }
 
 type authFile struct {
-	AuthMode      string          `json:"auth_mode,omitempty"`
-	OpenAIAPIKey     string          `json:"OPENAI_API_KEY,omitempty"`
-	AnthropicAPIKey  string          `json:"ANTHROPIC_API_KEY,omitempty"`
-	Tokens           *tokenBlob      `json:"tokens,omitempty"`
-	LastRefresh      string          `json:"last_refresh,omitempty"`
-	OpenAIAPIKey2    string          `json:"openai_api_key,omitempty"`
-	Raw           json.RawMessage `json:"-"`
+	AuthMode        string          `json:"auth_mode,omitempty"`
+	OpenAIAPIKey    string          `json:"OPENAI_API_KEY,omitempty"`
+	AnthropicAPIKey string          `json:"ANTHROPIC_API_KEY,omitempty"`
+	Tokens          *tokenBlob      `json:"tokens,omitempty"`
+	LastRefresh     string          `json:"last_refresh,omitempty"`
+	OpenAIAPIKey2   string          `json:"openai_api_key,omitempty"`
+	Raw             json.RawMessage `json:"-"`
 }
 
 type tokenBlob struct {

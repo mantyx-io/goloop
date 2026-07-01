@@ -23,19 +23,19 @@ func NewCursor(cfg *config.Config, disp *display.Display) *Cursor {
 	return &Cursor{cfg: cfg, display: disp}
 }
 
-func (c *Cursor) RunBuilder(task string) (Result, error) {
-	return c.run(task, agent.RoleBuilder, false)
+func (c *Cursor) RunBuilder(ctx context.Context, task string) (Result, error) {
+	return c.run(ctx, task, agent.RoleBuilder, false)
 }
 
-func (c *Cursor) RunEvaluator(task string) (Result, error) {
-	return c.run(task, agent.RoleEvaluator, true)
+func (c *Cursor) RunEvaluator(ctx context.Context, task string) (Result, error) {
+	return c.run(ctx, task, agent.RoleEvaluator, true)
 }
 
-func (c *Cursor) RunToolsmith(task string) (Result, error) {
-	return c.run(task, agent.RoleToolsmith, false)
+func (c *Cursor) RunToolsmith(ctx context.Context, task string) (Result, error) {
+	return c.run(ctx, task, agent.RoleToolsmith, false)
 }
 
-func (c *Cursor) run(task string, role agent.Role, readOnly bool) (Result, error) {
+func (c *Cursor) run(ctx context.Context, task string, role agent.Role, readOnly bool) (Result, error) {
 	cmd := []string{
 		c.cfg.CursorBinary,
 		"agent", "-p",
@@ -65,16 +65,16 @@ func (c *Cursor) run(task string, role agent.Role, readOnly bool) (Result, error
 	cmd = append(cmd, prompt)
 
 	if useStream {
-		return c.runStreaming(cmd)
+		return c.runStreaming(ctx, cmd)
 	}
-	return c.runCapture(cmd)
+	return c.runCapture(ctx, cmd)
 }
 
-func (c *Cursor) runCapture(cmd []string) (Result, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.WorkerTimeoutSeconds)*time.Second)
+func (c *Cursor) runCapture(ctx context.Context, cmd []string) (Result, error) {
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(c.cfg.WorkerTimeoutSeconds)*time.Second)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
+	command := exec.CommandContext(runCtx, cmd[0], cmd[1:]...)
 	command.Dir = c.cfg.ProjectRoot
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
@@ -83,11 +83,13 @@ func (c *Cursor) runCapture(cmd []string) (Result, error) {
 	err := command.Run()
 	rc := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			rc = exitErr.ExitCode()
-		} else if ctx.Err() == context.DeadlineExceeded {
+		if runCtx.Err() == context.DeadlineExceeded {
 			rc = 124
 			stderr.WriteString("cursor agent timed out")
+		} else if ctx.Err() != nil {
+			return Result{}, ctx.Err()
+		} else if exitErr, ok := err.(*exec.ExitError); ok {
+			rc = exitErr.ExitCode()
 		} else {
 			return Result{}, err
 		}
@@ -101,15 +103,15 @@ func (c *Cursor) runCapture(cmd []string) (Result, error) {
 	}, nil
 }
 
-func (c *Cursor) runStreaming(cmd []string) (Result, error) {
+func (c *Cursor) runStreaming(ctx context.Context, cmd []string) (Result, error) {
 	if c.display != nil {
 		c.display.BeginWorkerStream()
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.WorkerTimeoutSeconds)*time.Second)
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(c.cfg.WorkerTimeoutSeconds)*time.Second)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
+	command := exec.CommandContext(runCtx, cmd[0], cmd[1:]...)
 	command.Dir = c.cfg.ProjectRoot
 
 	stdout, err := command.StdoutPipe()
@@ -142,12 +144,13 @@ func (c *Cursor) runStreaming(cmd []string) (Result, error) {
 	waitErr := command.Wait()
 	rc := 0
 	if waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			rc = exitErr.ExitCode()
-		} else if ctx.Err() == context.DeadlineExceeded {
+		if runCtx.Err() == context.DeadlineExceeded {
 			rc = 124
 			stderr.WriteString("cursor agent timed out")
-			_ = command.Process.Kill()
+		} else if ctx.Err() != nil {
+			return Result{}, ctx.Err()
+		} else if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			rc = exitErr.ExitCode()
 		} else {
 			return Result{}, waitErr
 		}
