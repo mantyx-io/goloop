@@ -12,6 +12,7 @@ import (
 	"github.com/mantyx-io/goloop/internal/config"
 	"github.com/mantyx-io/goloop/internal/display"
 	"github.com/mantyx-io/goloop/internal/llm"
+	"github.com/mantyx-io/goloop/internal/notify"
 	"github.com/mantyx-io/goloop/internal/supervisor"
 	"github.com/mantyx-io/goloop/internal/tools"
 	"github.com/mantyx-io/goloop/internal/usercontext"
@@ -150,8 +151,15 @@ func (o *Orchestrator) Run(ctx context.Context, maxIterations int) error {
 		}
 
 		if str(plan, "action", "") == "complete" {
-			o.display.GoalComplete()
-			return nil
+			confirmed, err := o.confirmCompletion(ctx, i)
+			if err != nil {
+				return fmt.Errorf("iteration %d completion audit: %w", i, err)
+			}
+			if confirmed {
+				o.display.GoalComplete()
+				o.notify("Goloop", "Objective complete: "+truncate(o.cfg.Goal, 120))
+				return nil
+			}
 		}
 
 		select {
@@ -161,7 +169,96 @@ func (o *Orchestrator) Run(ctx context.Context, maxIterations int) error {
 		}
 	}
 
+	o.notify("Goloop", fmt.Sprintf("Run ended after %d iteration(s) without completion.", maxIterations))
 	return nil
+}
+
+// confirmCompletion audits the supervisor's complete claim with a read-only
+// evaluator pass. Premature completion is the classic failure mode of agent
+// loops, so the claim only stands when the evaluator confirms it (or when
+// auditing is disabled or returns no verdict). On rejection the findings are
+// written to the checkpoint so the next iteration can act on them.
+func (o *Orchestrator) confirmCompletion(ctx context.Context, iteration int) (bool, error) {
+	if !o.cfg.AuditCompletion {
+		return true, nil
+	}
+
+	task := o.workerTask(fmt.Sprintf(
+		`The supervisor claims the objective is fully achieved. Audit that claim.
+
+Objective: %s
+
+Verify end-to-end against the repository: deliverables exist, build, and satisfy the objective.
+Be skeptical — look for stubs, TODOs, failing builds or tests, and unmet requirements.
+
+End your reply with exactly one final line:
+VERDICT: COMPLETE
+or
+VERDICT: INCOMPLETE — <what is missing>`,
+		o.cfg.Goal,
+	))
+	result, err := o.runWorker(func() (worker.Result, error) {
+		return o.worker.RunEvaluator(ctx, task)
+	}, fmt.Sprintf("Auditing completion claim with %s evaluator…", o.cfg.WorkerBackend))
+	if err != nil {
+		return false, err
+	}
+
+	notes := summarizeWorker(result)
+	complete, found := parseAuditVerdict(result.Stdout)
+	o.display.ShowWorkerResult(string(o.cfg.WorkerBackend)+" (completion audit)", complete || !found, notes, result.Reasoning)
+
+	if !found {
+		// Don't deadlock the loop on a formatting miss — accept, but say so.
+		o.display.Warn("Completion audit returned no VERDICT line; accepting the claim.")
+		return true, nil
+	}
+	if complete {
+		return true, nil
+	}
+
+	o.display.Warn("Completion audit rejected the claim — continuing the loop.")
+	o.checkpoint.AddBlocker("Completion audit rejected the supervisor's complete claim: " + truncate(notes, 200))
+	o.checkpoint.AppendHistory(checkpoint.Entry{
+		Iteration: iteration,
+		Action:    "completion_audit",
+		Summary:   "Evaluator rejected the completion claim; the loop continues.",
+		Status:    "failed",
+		Notes:     truncate(notes, 1500),
+	})
+	if err := o.checkpoint.Save(); err != nil {
+		return false, err
+	}
+	o.display.CheckpointSaved(o.cfg.CheckpointPath)
+	return false, nil
+}
+
+// parseAuditVerdict scans for the last VERDICT line the evaluator emitted.
+// The second return value reports whether any verdict was found at all.
+func parseAuditVerdict(text string) (complete, found bool) {
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.ToUpper(strings.Trim(strings.TrimSpace(lines[i]), "*_#> "))
+		if !strings.HasPrefix(line, "VERDICT:") {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "VERDICT:"))
+		if strings.HasPrefix(rest, "INCOMPLETE") {
+			return false, true
+		}
+		if strings.HasPrefix(rest, "COMPLETE") {
+			return true, true
+		}
+	}
+	return false, false
+}
+
+// notify posts a desktop notification when enabled; long runs happen in the
+// background, so surface the moments that need the human.
+func (o *Orchestrator) notify(title, message string) {
+	if o.cfg.Notifications {
+		notify.Send(title, message)
+	}
 }
 
 func (o *Orchestrator) planIteration(ctx context.Context, iteration int, extraNote string) (map[string]any, error) {
@@ -201,6 +298,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 			status = "blocked"
 			o.checkpoint.AddBlocker(notes)
 		} else {
+			o.notify("Goloop needs your input", truncate(question, 120))
 			answer := o.display.AskUser(question, userCtx)
 			if err := o.userContext.Append(iteration, question, answer); err != nil {
 				return plan, err
