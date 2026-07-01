@@ -93,6 +93,7 @@ func runLoop(args []string) int {
 	dryRun := fs.Bool("dry-run", false, "Validate config without calling models")
 	plain := fs.Bool("plain", false, "Disable rich UI")
 	noInteractive := fs.Bool("no-interactive", false, "Never prompt stdin (ask_user → blocker)")
+	worktree := fs.String("worktree", "", "Run in an isolated git worktree on this branch (created under ../<repo>.goloop-worktrees/)")
 	verbose := fs.Bool("verbose", false, "Debug logging")
 	supervisorBackend := fs.String("supervisor-backend", "", "Override supervisor backend (chatgpt, openai, anthropic)")
 	supervisorModel := fs.String("supervisor-model", "", "Override supervisor model")
@@ -124,6 +125,16 @@ func runLoop(args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid directory: %v\n", err)
 		return 1
+	}
+
+	if *worktree != "" {
+		runDir, err := ensureWorktree(absRoot, *worktree)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "worktree error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "Running in isolated worktree: %s (branch %s)\n\n", runDir, *worktree)
+		absRoot = runDir
 	}
 
 	iterCount := *iters

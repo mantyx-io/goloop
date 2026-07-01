@@ -87,11 +87,19 @@ continues into the loop automatically.
 ```bash
 goloop run .                              # uses the project's saved goal
 goloop run . --iters 30                   # cap iterations
+goloop run . --worktree feat/todo-cli     # isolate the run in a git worktree
 goloop run . --dry-run                    # validate config without calling models
 goloop run ./app -p "Focus on tests"      # extra instructions for this run
 
+goloop doctor                             # verify config, auth & worker CLI
+goloop doctor --call                      # + live supervisor smoke test
+
 ./scripts/run-loop.sh .                   # auto-restart when tools are installed (exit 75)
 ```
+
+Workers run with permissions bypassed (`--yolo` / `--dangerously-skip-permissions`), so for
+autonomous runs on a repo you care about, prefer `--worktree <branch>` — edits land in a separate
+checkout under `../<repo>.goloop-worktrees/` and your working copy stays untouched.
 
 ## 🧠 How it works
 
@@ -171,6 +179,7 @@ goloop run [directory]        Run the agentic loop (default: .)
 goloop configure [directory]  Global or project config (full-screen TUI wizard)
 goloop init [directory]       Initialize a project (.goloop/config.yaml)
 goloop login                  Authenticate the supervisor
+goloop doctor [directory]     Check install, auth, and worker readiness
 goloop version                Print version
 ```
 
@@ -182,6 +191,7 @@ goloop version                Print version
 --iters             Max iterations (alias: --max-iterations)
 -p, --prompt        Extra instructions for this run
 --prompt-file       Read extra instructions from a file
+--worktree          Run in an isolated git worktree on this branch
 --reset             Wipe .goloop state and output dir
 --dry-run           Validate config without calling models
 --plain             Disable rich UI

@@ -28,6 +28,8 @@ func dispatch(args []string) int {
 		return runInit(args[1:])
 	case "login":
 		return runLogin(args[1:])
+	case "doctor":
+		return runDoctor(args[1:])
 	case "version", "--version", "-V":
 		fmt.Println(version)
 		return 0
@@ -53,6 +55,7 @@ Usage:
   goloop configure [directory]       Global or project config
   goloop init [directory]            Initialize a project for the loop
   goloop login [flags]               Authenticate (ChatGPT or API key)
+  goloop doctor [directory]          Check install, auth, and worker readiness
   goloop version                     Print version
 
 Examples:
