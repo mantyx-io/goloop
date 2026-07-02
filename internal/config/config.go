@@ -55,7 +55,13 @@ type Config struct {
 	Interactive      bool
 	AuditCompletion  bool
 	Notifications    bool
+	AutoCommit       bool
+	Transcript       bool
+	MaxTokens        int
 	AdditionalPrompt string
+
+	VerifyCommand        string
+	VerifyTimeoutSeconds int
 
 	CheckpointPath  string
 	UserContextPath string
@@ -90,6 +96,7 @@ type rawConfig struct {
 	Tools      toolsYAML      `yaml:"tools"`
 	Loop       loopYAML       `yaml:"loop"`
 	Paths      pathsYAML      `yaml:"paths"`
+	Verify     verifyYAML     `yaml:"verify"`
 }
 
 type supervisorYAML struct {
@@ -132,7 +139,15 @@ type loopYAML struct {
 	Interactive      *bool  `yaml:"interactive"`
 	AuditCompletion  *bool  `yaml:"audit_completion"`
 	Notifications    *bool  `yaml:"notifications"`
+	AutoCommit       *bool  `yaml:"auto_commit"`
+	Transcript       *bool  `yaml:"transcript"`
+	MaxTokens        int    `yaml:"max_tokens"`
 	AdditionalPrompt string `yaml:"additional_prompt"`
+}
+
+type verifyYAML struct {
+	Command        string `yaml:"command"`
+	TimeoutSeconds int    `yaml:"timeout_seconds"`
 }
 
 type pathsYAML struct {
@@ -231,6 +246,14 @@ func Load(overrides Overrides) (*Config, error) {
 	if raw.Loop.Notifications != nil {
 		notifications = *raw.Loop.Notifications
 	}
+	autoCommit := false
+	if raw.Loop.AutoCommit != nil {
+		autoCommit = *raw.Loop.AutoCommit
+	}
+	transcriptEnabled := true
+	if raw.Loop.Transcript != nil {
+		transcriptEnabled = *raw.Loop.Transcript
+	}
 
 	goloopDir := ProjectGoloopDir(root)
 	checkpoint := raw.Paths.Checkpoint
@@ -326,7 +349,13 @@ func Load(overrides Overrides) (*Config, error) {
 		Interactive:      interactive,
 		AuditCompletion:  auditCompletion,
 		Notifications:    notifications,
+		AutoCommit:       autoCommit,
+		Transcript:       transcriptEnabled,
+		MaxTokens:        raw.Loop.MaxTokens,
 		AdditionalPrompt: additionalPrompt,
+
+		VerifyCommand:        strings.TrimSpace(raw.Verify.Command),
+		VerifyTimeoutSeconds: defaultInt(raw.Verify.TimeoutSeconds, 300),
 
 		CheckpointPath:  filepath.Join(goloopDir, filepath.Base(checkpoint)),
 		UserContextPath: filepath.Join(goloopDir, filepath.Base(userContext)),

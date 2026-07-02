@@ -31,3 +31,12 @@ loop:
   interactive: true
   audit_completion: true   # verify `complete` claims with a read-only evaluator pass
   notifications: true      # desktop notification on ask_user / completion
+  auto_commit: false       # git commit after each delegation (rollback points)
+  transcript: true         # full run log at .goloop/logs/run-<ts>.jsonl
+  max_tokens: 0            # stop when supervisor tokens exceed this (0 = unlimited)
+
+# Deterministic check run after every delegation and before accepting completion.
+# Best set per project (e.g. your test command).
+# verify:
+#   command: go test ./...
+#   timeout_seconds: 300

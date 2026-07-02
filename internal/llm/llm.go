@@ -17,6 +17,25 @@ type Client interface {
 	ChatJSON(ctx context.Context, messages []Message) (map[string]any, error)
 }
 
+// Usage counts supervisor tokens consumed through the API.
+type Usage struct {
+	Input  int
+	Output int
+}
+
+func (u Usage) Total() int { return u.Input + u.Output }
+
+func (u *Usage) Add(other Usage) {
+	u.Input += other.Input
+	u.Output += other.Output
+}
+
+// UsageTracker is implemented by clients that can report cumulative token
+// usage for the process lifetime.
+type UsageTracker interface {
+	TotalUsage() Usage
+}
+
 var jsonObjectRE = regexp.MustCompile(`\{[\s\S]*\}`)
 
 func ParseJSONObject(text string) (map[string]any, error) {
