@@ -22,6 +22,8 @@ func dispatch(args []string) int {
 	switch args[0] {
 	case "run":
 		return runLoop(args[1:])
+	case "start":
+		return startLoop(args[1:])
 	case "configure", "config":
 		return runConfigure(args[1:])
 	case "init":
@@ -50,6 +52,7 @@ func printUsage() {
 
 Usage:
   goloop run [directory] [flags]     Run the agentic loop
+  goloop start [directory] [flags]   Pick or create a goal, then run
   goloop configure [directory]       Global or project config
   goloop init [directory]            Initialize a project for the loop
   goloop login [flags]               Authenticate (ChatGPT or API key)
@@ -59,10 +62,11 @@ Examples:
   goloop configure              # once: models & auth defaults
   goloop init                   # per project: goal, iters, agents
   goloop login
+  goloop start .                # pick a goal from .goloop/goals/
   goloop run .
   goloop run . --iters=30
   goloop run ./my-app -p "Focus on tests first"
 
-Run 'goloop run --help' or 'goloop configure --help' for more flags.
+Run 'goloop run --help', 'goloop start --help', or 'goloop configure --help' for more flags.
 `)
 }

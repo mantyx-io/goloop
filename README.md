@@ -79,12 +79,18 @@ goloop login                              # ChatGPT subscription (device code)
 # 2. Point it at a goal and run.
 cd your-project
 goloop run . --goal "Build a todo CLI"
+# or pick from a goals library:
+goloop start .
 ```
 
 That's it. If the directory isn't set up yet, `goloop run` launches a short setup wizard and then
-continues into the loop automatically.
+continues into the loop automatically. Use `goloop start` when you want to pick or create goals from
+`.goloop/goals/` — each goal keeps its own checkpoint and output.
 
 ```bash
+goloop start .                            # interactive goal picker
+goloop start . --goal todo-cli            # resume a saved goal
+goloop start . --list                     # list saved goal slugs
 goloop run .                              # uses the project's saved goal
 goloop run . --iters 30                   # cap iterations
 goloop run . --dry-run                    # validate config without calling models
@@ -168,11 +174,32 @@ See [`example/global-config.example.yaml`](example/global-config.example.yaml) a
 
 ```text
 goloop run [directory]        Run the agentic loop (default: .)
+goloop start [directory]      Pick or create a goal, then run
 goloop configure [directory]  Global or project config (full-screen TUI wizard)
 goloop init [directory]       Initialize a project (.goloop/config.yaml)
 goloop login                  Authenticate the supervisor
 goloop version                Print version
 ```
+
+<details>
+<summary><code>goloop start</code> flags</summary>
+
+```text
+--goal              Run a saved goal by slug
+--goal-file         Use goal text from a file (ephemeral)
+--new-goal          Create or update a saved goal, then run
+--goal-text         Goal text (with --new-goal)
+--list              List saved goals and exit
+--reset             Wipe selected goal's checkpoint, user context, and output
+--dry-run           Validate config without calling models
+--iters             Max iterations (alias: --max-iterations)
+-p, --prompt        Extra instructions for this run
+```
+
+Goals live under `.goloop/goals/<slug>.md`. Runtime state for each goal is isolated under
+`.goloop/goals/<slug>/` (checkpoint, user context, output). Supervisor tools stay shared at
+`.goloop/tools/`.
+</details>
 
 <details>
 <summary><code>goloop run</code> flags</summary>

@@ -57,48 +57,11 @@ func reportConfigError(err error, absRoot string) {
 	}
 }
 
-// supervisorNotReady returns a human-readable reason when the supervisor cannot
-// authenticate, or "" when it is ready to run.
-func supervisorNotReady(cfg *config.Config) string {
-	switch cfg.SupervisorBackend {
-	case config.SupervisorChatGPT:
-		if auth.IsAvailable(auth.ResolveAuthPathForRead(cfg.SupervisorAuthPath)) {
-			return ""
-		}
-		return "ChatGPT sign-in required — run: goloop login"
-	case config.SupervisorOpenAI:
-		if cfg.SupervisorAPIKey != "" {
-			return ""
-		}
-		return fmt.Sprintf("OpenAI API key missing — set %s or run: goloop configure", cfg.SupervisorAPIKeyEnv)
-	case config.SupervisorAnthropic:
-		if cfg.SupervisorAPIKey != "" {
-			return ""
-		}
-		return fmt.Sprintf("Anthropic API key missing — set %s or run: goloop configure", cfg.SupervisorAPIKeyEnv)
-	}
-	return ""
-}
-
 func runLoop(args []string) int {
 	fs := flag.NewFlagSet("goloop run", flag.ExitOnError)
-	configPath := fs.String("config", "", "Path to config YAML (overrides default layer)")
 	goal := fs.String("goal", "", "Objective for this run (overrides project config)")
 	goalShort := fs.String("g", "", "Alias for --goal")
-	iters := fs.Int("iters", 0, "Max loop iterations (overrides config)")
-	maxIterations := fs.Int("max-iterations", 0, "Alias for --iters")
-	prompt := fs.String("prompt", "", "Additional instructions for this run")
-	promptFile := fs.String("prompt-file", "", "Read additional instructions from a file")
-	doReset := fs.Bool("reset", false, "Reset .goloop state and output dir before starting")
-	dryRun := fs.Bool("dry-run", false, "Validate config without calling models")
-	plain := fs.Bool("plain", false, "Disable rich UI")
-	noInteractive := fs.Bool("no-interactive", false, "Never prompt stdin (ask_user → blocker)")
-	verbose := fs.Bool("verbose", false, "Debug logging")
-	supervisorBackend := fs.String("supervisor-backend", "", "Override supervisor backend (chatgpt, openai, anthropic)")
-	supervisorModel := fs.String("supervisor-model", "", "Override supervisor model")
-	workerBackend := fs.String("worker-backend", "", "Override worker backend (cursor, claude_code)")
-	cursorModel := fs.String("cursor-model", "", "Override Cursor worker model")
-	claudeModel := fs.String("claude-code-model", "", "Override Claude Code worker model")
+	lf := registerLoopFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: goloop run [directory] [flags]\n\n")
@@ -111,28 +74,13 @@ func runLoop(args []string) int {
 		return 2
 	}
 
-	if *verbose {
-		log.SetFlags(log.LstdFlags | log.Lshortfile)
-	} else {
-		log.SetFlags(0)
-	}
+	setVerboseLogging(lf.verbose)
 
-	if targetDir == "" {
-		targetDir = "."
-	}
+	targetDir = defaultTargetDir(targetDir)
 	absRoot, err := filepath.Abs(targetDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid directory: %v\n", err)
 		return 1
-	}
-
-	iterCount := *iters
-	if iterCount == 0 {
-		iterCount = *maxIterations
-	}
-	var maxIterPtr *int
-	if iterCount > 0 {
-		maxIterPtr = &iterCount
 	}
 
 	runGoal := strings.TrimSpace(*goal)
@@ -140,59 +88,27 @@ func runLoop(args []string) int {
 		runGoal = strings.TrimSpace(*goalShort)
 	}
 
-	// Auto-init: no project config and no inline goal → run the init wizard, then continue.
 	if runGoal == "" && !config.IsInitialized(absRoot) {
-		if code := autoInit(absRoot, *configPath); code != 0 {
+		if code := autoInit(absRoot, lf.configPath); code != 0 {
 			return code
 		}
 	}
 
-	cfg, err := config.Load(config.Overrides{
-		ConfigPath:        *configPath,
-		ProjectRoot:       absRoot,
-		Goal:              runGoal,
-		MaxIterations:     maxIterPtr,
-		Prompt:            *prompt,
-		PromptFile:        *promptFile,
-		NoInteractive:     *noInteractive,
-		SupervisorBackend: *supervisorBackend,
-		SupervisorModel:   *supervisorModel,
-		WorkerBackend:     *workerBackend,
-		CursorModel:       *cursorModel,
-		ClaudeCodeModel:   *claudeModel,
-	})
+	cfg, err := config.Load(lf.configOverrides(absRoot, runGoal))
 	if err != nil {
 		reportConfigError(err, absRoot)
 		return 1
 	}
 
-	disp := display.New(*plain, !cfg.Interactive)
+	disp := display.New(lf.plain, !cfg.Interactive)
+	return executeLoop(cfg, disp, lf)
+}
 
-	if *doReset {
-		removed, err := reset.State(cfg.CheckpointPath, cfg.UserContextPath, cfg.OutputDir, cfg.Goal)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "reset error: %v\n", err)
-			return 1
-		}
-		disp.Info("State reset — fresh .goloop/checkpoint.md")
-		if len(removed) > 0 {
-			disp.Info(fmt.Sprintf("Cleared %s/ (%d items)", filepath.Base(cfg.OutputDir), len(removed)))
-		} else {
-			disp.Info(fmt.Sprintf("Output dir ready: %s/", filepath.Base(cfg.OutputDir)))
-		}
-	}
+func resetState(cfg *config.Config) ([]string, error) {
+	return reset.State(cfg.CheckpointPath, cfg.UserContextPath, cfg.OutputDir, cfg.Goal)
+}
 
-	if *dryRun {
-		printDryRun(disp, cfg)
-		return 0
-	}
-
-	if msg := supervisorNotReady(cfg); msg != "" {
-		fmt.Fprintln(os.Stderr, "Supervisor not configured:")
-		fmt.Fprintln(os.Stderr, "  "+msg)
-		return 1
-	}
-
+func runOrchestrator(cfg *config.Config, disp *display.Display, maxIterPtr *int) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -226,9 +142,27 @@ func runLoop(args []string) int {
 	return 0
 }
 
+func setVerboseLogging(verbose bool) {
+	if verbose {
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+	} else {
+		log.SetFlags(0)
+	}
+}
+
+func defaultTargetDir(target string) string {
+	if target == "" {
+		return "."
+	}
+	return target
+}
+
 func printDryRun(disp *display.Display, cfg *config.Config) {
 	if len(cfg.ConfigSources) > 0 {
 		disp.Info("Config: " + strings.Join(cfg.ConfigSources, " + "))
+	}
+	if cfg.GoalSlug != "" {
+		disp.Info(fmt.Sprintf("Goal slug: %s", cfg.GoalSlug))
 	}
 	disp.Info(fmt.Sprintf("Goal: %s", truncateGoal(cfg.Goal, 80)))
 	disp.Info(fmt.Sprintf("Checkpoint: %s", cfg.CheckpointPath))
@@ -244,6 +178,7 @@ func printDryRun(disp *display.Display, cfg *config.Config) {
 	}
 	disp.Info(fmt.Sprintf("Worker backend: %s", cfg.WorkerBackend))
 	disp.Info(fmt.Sprintf("Worker model: %s", cfg.WorkerModel()))
+	disp.Info(fmt.Sprintf("Output dir: %s", cfg.OutputDir))
 	disp.Info(fmt.Sprintf("Max iterations: %d", cfg.MaxIterations))
 	disp.Info(fmt.Sprintf("Worker prompts: built-in (override dir: %s)", cfg.ResolvedAgentsDir()))
 	disp.Info(fmt.Sprintf("Tool restart exit code: %d", cfg.ToolsRestartExitCode))
@@ -255,6 +190,29 @@ func printDryRun(disp *display.Display, cfg *config.Config) {
 		}
 		disp.Info("Additional prompt: " + preview)
 	}
+}
+
+// supervisorNotReady returns a human-readable reason when the supervisor cannot
+// authenticate, or "" when it is ready to run.
+func supervisorNotReady(cfg *config.Config) string {
+	switch cfg.SupervisorBackend {
+	case config.SupervisorChatGPT:
+		if auth.IsAvailable(auth.ResolveAuthPathForRead(cfg.SupervisorAuthPath)) {
+			return ""
+		}
+		return "ChatGPT sign-in required — run: goloop login"
+	case config.SupervisorOpenAI:
+		if cfg.SupervisorAPIKey != "" {
+			return ""
+		}
+		return fmt.Sprintf("OpenAI API key missing — set %s or run: goloop configure", cfg.SupervisorAPIKeyEnv)
+	case config.SupervisorAnthropic:
+		if cfg.SupervisorAPIKey != "" {
+			return ""
+		}
+		return fmt.Sprintf("Anthropic API key missing — set %s or run: goloop configure", cfg.SupervisorAPIKeyEnv)
+	}
+	return ""
 }
 
 func keyStatus(key string) string {

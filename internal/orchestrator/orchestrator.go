@@ -260,8 +260,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 			if title := str(plan, "delegate_title", ""); title != "" {
 				task = "[" + title + "]\n\n" + task
 			}
-			outputName := filepath.Base(o.cfg.OutputDir)
-			task = o.workerTask(fmt.Sprintf("Build all artifacts under `%s/`.\n\n%s", outputName, task))
+			task = o.workerTask(fmt.Sprintf("Build all artifacts under `%s`.\n\n%s", outputDirLabel(o.cfg.OutputDir), task))
 			result, err := o.runWorker(func() (worker.Result, error) {
 				return o.worker.RunBuilder(ctx, task)
 			}, fmt.Sprintf("Running %s worker…", o.cfg.WorkerBackend))
@@ -327,10 +326,12 @@ func (o *Orchestrator) buildContext(iteration int, extraNote string) string {
 		parts = append(parts, "## user_context.md\n```markdown\n"+userText+"\n```")
 	}
 	parts = append(parts, "## Supervisor tools (.goloop/tools/)\n"+tools.Describe(o.cfg.ToolsDirPath()))
-	outputTree := treeSummary(o.cfg.OutputDir, "project/", 3)
-	parts = append(parts, "## Output project\n```\n"+outputTree+"\n```")
+	if !pathsEqual(o.cfg.OutputDir, o.cfg.ProjectRoot) {
+		outputTree := treeSummary(o.cfg.OutputDir, outputDirLabel(o.cfg.OutputDir), 3)
+		parts = append(parts, "## Output directory\n```\n"+outputTree+"\n```")
+	}
 	repoTree := treeSummary(o.cfg.ProjectRoot, "", 3)
-	parts = append(parts, "## Repository layout (repo root)\n```\n"+repoTree+"\n```")
+	parts = append(parts, "## Repository layout\n```\n"+repoTree+"\n```")
 	if o.cfg.AdditionalPrompt != "" {
 		parts = append(parts, "## Operator instructions (this run)\n"+o.cfg.AdditionalPrompt+
 			"\n\nTreat these as high-priority guidance from the human operator.")
@@ -372,6 +373,23 @@ func summarizeWorker(result worker.Result) string {
 	}
 	parts = append(parts, output)
 	return strings.Join(parts, "\n")
+}
+
+func outputDirLabel(dir string) string {
+	base := filepath.Base(dir)
+	if base == "." || base == string(filepath.Separator) {
+		return "./"
+	}
+	return base + "/"
+}
+
+func pathsEqual(a, b string) bool {
+	ap, errA := filepath.Abs(a)
+	bp, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	return ap == bp
 }
 
 func treeSummary(root, label string, maxDepth int) string {

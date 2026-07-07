@@ -7,9 +7,9 @@ import (
 	"github.com/mantyx-io/goloop/internal/checkpoint"
 )
 
-const outputREADME = `# Output Project
+const outputREADME = `# Output directory
 
-Worker-built artifacts live here. Loop infrastructure stays at the project root.
+Worker-built artifacts live here. Goloop state stays under .goloop/.
 
 Reset this sandbox:
 
