@@ -53,6 +53,8 @@ type Config struct {
 	MaxIterations    int
 	PauseSeconds     int
 	Interactive      bool
+	AuditCompletion  bool
+	Notifications    bool
 	AdditionalPrompt string
 
 	CheckpointPath  string
@@ -128,6 +130,8 @@ type loopYAML struct {
 	MaxIterations    int    `yaml:"max_iterations"`
 	PauseSeconds     int    `yaml:"pause_seconds"`
 	Interactive      *bool  `yaml:"interactive"`
+	AuditCompletion  *bool  `yaml:"audit_completion"`
+	Notifications    *bool  `yaml:"notifications"`
 	AdditionalPrompt string `yaml:"additional_prompt"`
 }
 
@@ -217,6 +221,15 @@ func Load(overrides Overrides) (*Config, error) {
 	}
 	if overrides.NoInteractive {
 		interactive = false
+	}
+
+	auditCompletion := true
+	if raw.Loop.AuditCompletion != nil {
+		auditCompletion = *raw.Loop.AuditCompletion
+	}
+	notifications := true
+	if raw.Loop.Notifications != nil {
+		notifications = *raw.Loop.Notifications
 	}
 
 	goloopDir := ProjectGoloopDir(root)
@@ -311,6 +324,8 @@ func Load(overrides Overrides) (*Config, error) {
 		MaxIterations:    maxIter,
 		PauseSeconds:     defaultInt(raw.Loop.PauseSeconds, 2),
 		Interactive:      interactive,
+		AuditCompletion:  auditCompletion,
+		Notifications:    notifications,
 		AdditionalPrompt: additionalPrompt,
 
 		CheckpointPath:  filepath.Join(goloopDir, filepath.Base(checkpoint)),

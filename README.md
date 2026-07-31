@@ -116,7 +116,7 @@ Each iteration the supervisor reads the checkpoint, decides what to do, and emit
 | `evaluate` | Runs the worker read-only to review progress against the objective |
 | `ask_user` | Pauses and asks the human a question (answers saved to `user_context.md`) |
 | `delegate_tools` | Worker writes a new supervisor tool under `.goloop/tools/`; loop restarts (exit `75`) |
-| `complete` | Objective achieved end-to-end — the loop stops |
+| `complete` | Claim is audited by a read-only evaluator pass; the loop stops only when it confirms |
 
 Worker **role prompts** (builder / evaluator / toolsmith) are built into goloop, so a fresh project
 needs no extra files. To customize a role, drop a `<role>.md` agent file (e.g. `builder.md`) into
@@ -159,7 +159,7 @@ See [`example/global-config.example.yaml`](example/global-config.example.yaml) a
 | `worker` | Execution backend — `cursor` or `claude_code` |
 | `cursor` | Cursor CLI binary and model |
 | `claude_code` | Claude Code CLI binary and model |
-| `loop` | Iteration limit, pause, interactivity |
+| `loop` | Iteration limit, pause, interactivity, `audit_completion`, `notifications` |
 | `paths` | Output dir (checkpoint paths default under `.goloop/`) |
 | `tools` | Tool directory and restart exit code |
 </details>
