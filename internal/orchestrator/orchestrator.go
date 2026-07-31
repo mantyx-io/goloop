@@ -4,17 +4,21 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/mantyx-io/goloop/internal/checkpoint"
 	"github.com/mantyx-io/goloop/internal/config"
 	"github.com/mantyx-io/goloop/internal/display"
+	"github.com/mantyx-io/goloop/internal/gitx"
 	"github.com/mantyx-io/goloop/internal/llm"
 	"github.com/mantyx-io/goloop/internal/notify"
 	"github.com/mantyx-io/goloop/internal/supervisor"
 	"github.com/mantyx-io/goloop/internal/tools"
+	"github.com/mantyx-io/goloop/internal/transcript"
 	"github.com/mantyx-io/goloop/internal/usercontext"
 	"github.com/mantyx-io/goloop/internal/worker"
 )
@@ -85,6 +89,8 @@ type Orchestrator struct {
 	worker      worker.Runner
 	userContext *usercontext.Store
 	checkpoint  *checkpoint.Checkpoint
+	transcript  *transcript.Logger
+	usageSeen   llm.Usage
 }
 
 func New(cfg *config.Config, disp *display.Display) (*Orchestrator, error) {
@@ -102,6 +108,11 @@ func New(cfg *config.Config, disp *display.Display) (*Orchestrator, error) {
 		return nil, err
 	}
 
+	var tl *transcript.Logger
+	if cfg.Transcript {
+		tl = transcript.New(filepath.Join(cfg.GoloopDir, "logs"))
+	}
+
 	return &Orchestrator{
 		cfg:         cfg,
 		display:     disp,
@@ -109,6 +120,7 @@ func New(cfg *config.Config, disp *display.Display) (*Orchestrator, error) {
 		worker:      w,
 		userContext: usercontext.New(cfg.UserContextPath),
 		checkpoint:  ckpt,
+		transcript:  tl,
 	}, nil
 }
 
@@ -126,11 +138,37 @@ func (o *Orchestrator) Run(ctx context.Context, maxIterations int) error {
 		o.cfg.AdditionalPrompt,
 	)
 
+	defer o.transcript.Close()
+	o.transcript.Log("run_start", 0, map[string]any{
+		"goal":           o.cfg.Goal,
+		"supervisor":     o.cfg.SupervisorLabel(),
+		"worker":         string(o.cfg.WorkerBackend),
+		"worker_model":   o.cfg.WorkerModel(),
+		"max_iterations": maxIterations,
+	})
+	if o.transcript != nil {
+		o.display.Info("Transcript: " + o.transcript.Path())
+	}
+
 	for i := 1; i <= maxIterations; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		if o.cfg.MaxTokens > 0 {
+			if used := o.supervisorUsage(); used.Total() >= o.cfg.MaxTokens {
+				msg := fmt.Sprintf("Token budget reached (%d/%d supervisor tokens) — stopping.", used.Total(), o.cfg.MaxTokens)
+				o.display.Warn(msg)
+				o.checkpoint.AddBlocker(msg)
+				if err := o.checkpoint.Save(); err != nil {
+					return err
+				}
+				o.notify("Goloop", msg)
+				o.logRunEnd("token_budget", i)
+				return nil
+			}
 		}
 
 		o.display.IterationHeader(i, maxIterations, o.checkpoint.Phase)
@@ -147,6 +185,7 @@ func (o *Orchestrator) Run(ctx context.Context, maxIterations int) error {
 		}
 
 		if restart, _ := plan["_restart_for_tools"].(bool); restart {
+			o.logRunEnd("restart_for_tools", i)
 			return &RestartForTools{Summary: str(plan, "summary", "")}
 		}
 
@@ -158,6 +197,7 @@ func (o *Orchestrator) Run(ctx context.Context, maxIterations int) error {
 			if confirmed {
 				o.display.GoalComplete()
 				o.notify("Goloop", "Objective complete: "+truncate(o.cfg.Goal, 120))
+				o.logRunEnd("complete", i)
 				return nil
 			}
 		}
@@ -170,7 +210,24 @@ func (o *Orchestrator) Run(ctx context.Context, maxIterations int) error {
 	}
 
 	o.notify("Goloop", fmt.Sprintf("Run ended after %d iteration(s) without completion.", maxIterations))
+	o.logRunEnd("max_iterations", maxIterations)
 	return nil
+}
+
+func (o *Orchestrator) supervisorUsage() llm.Usage {
+	if tracker, ok := o.supervisor.(llm.UsageTracker); ok {
+		return tracker.TotalUsage()
+	}
+	return llm.Usage{}
+}
+
+func (o *Orchestrator) logRunEnd(reason string, iteration int) {
+	usage := o.supervisorUsage()
+	o.transcript.Log("run_end", iteration, map[string]any{
+		"reason":        reason,
+		"tokens_input":  usage.Input,
+		"tokens_output": usage.Output,
+	})
 }
 
 // confirmCompletion audits the supervisor's complete claim with a read-only
@@ -179,6 +236,28 @@ func (o *Orchestrator) Run(ctx context.Context, maxIterations int) error {
 // auditing is disabled or returns no verdict). On rejection the findings are
 // written to the checkpoint so the next iteration can act on them.
 func (o *Orchestrator) confirmCompletion(ctx context.Context, iteration int) (bool, error) {
+	// The verify command is the cheapest and most objective signal — check it
+	// before spending evaluator tokens on the claim.
+	if o.cfg.VerifyCommand != "" {
+		if verify := o.runVerify(ctx, iteration); !verify.ok {
+			o.display.Warn("Verify command failed — completion claim rejected.")
+			o.checkpoint.AddBlocker(fmt.Sprintf("Completion rejected: verify command failed (exit %d): %s",
+				verify.exit, truncate(verify.output, 200)))
+			o.checkpoint.AppendHistory(checkpoint.Entry{
+				Iteration: iteration,
+				Action:    "completion_audit",
+				Summary:   "Verify command failed; completion claim rejected.",
+				Status:    "failed",
+				Notes:     truncate(verify.summary(), 1500),
+			})
+			if err := o.checkpoint.Save(); err != nil {
+				return false, err
+			}
+			o.display.CheckpointSaved(o.cfg.CheckpointPath)
+			return false, nil
+		}
+	}
+
 	if !o.cfg.AuditCompletion {
 		return true, nil
 	}
@@ -207,6 +286,11 @@ VERDICT: INCOMPLETE — <what is missing>`,
 	notes := summarizeWorker(result)
 	complete, found := parseAuditVerdict(result.Stdout)
 	o.display.ShowWorkerResult(string(o.cfg.WorkerBackend)+" (completion audit)", complete || !found, notes, result.Reasoning)
+	o.transcript.Log("completion_audit", iteration, map[string]any{
+		"complete": complete,
+		"found":    found,
+		"output":   truncate(result.Stdout, 20000),
+	})
 
 	if !found {
 		// Don't deadlock the loop on a formatting miss — accept, but say so.
@@ -261,6 +345,101 @@ func (o *Orchestrator) notify(title, message string) {
 	}
 }
 
+type verifyResult struct {
+	ok      bool
+	exit    int
+	command string
+	output  string
+}
+
+func (v verifyResult) summary() string {
+	state := "passed"
+	if !v.ok {
+		state = fmt.Sprintf("FAILED (exit %d)", v.exit)
+	}
+	out := strings.TrimSpace(v.output)
+	if len(out) > 2000 {
+		out = out[:2000] + "\n... [truncated]"
+	}
+	if out == "" {
+		return fmt.Sprintf("verify `%s`: %s", v.command, state)
+	}
+	return fmt.Sprintf("verify `%s`: %s\n%s", v.command, state, out)
+}
+
+// runVerify executes the configured verify command in the project root. Its
+// exit code is a deterministic signal the supervisor's self-reports are not.
+func (o *Orchestrator) runVerify(ctx context.Context, iteration int) verifyResult {
+	o.display.Working("Verifying: " + o.cfg.VerifyCommand)
+
+	vctx, cancel := context.WithTimeout(ctx, time.Duration(o.cfg.VerifyTimeoutSeconds)*time.Second)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(vctx, "cmd", "/C", o.cfg.VerifyCommand)
+	} else {
+		cmd = exec.CommandContext(vctx, "sh", "-c", o.cfg.VerifyCommand)
+	}
+	cmd.Dir = o.cfg.ProjectRoot
+	out, err := cmd.CombinedOutput()
+
+	result := verifyResult{ok: err == nil, command: o.cfg.VerifyCommand, output: string(out)}
+	if err != nil {
+		result.exit = 1
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			result.exit = exitErr.ExitCode()
+		}
+		if vctx.Err() == context.DeadlineExceeded {
+			result.output += "\n(verify timed out)"
+		}
+	}
+
+	if result.ok {
+		o.display.Info("Verify passed: " + o.cfg.VerifyCommand)
+	} else {
+		o.display.Warn(fmt.Sprintf("Verify failed (exit %d): %s", result.exit, o.cfg.VerifyCommand))
+	}
+	o.transcript.Log("verify", iteration, map[string]any{
+		"command": result.command,
+		"ok":      result.ok,
+		"exit":    result.exit,
+		"output":  truncate(result.output, 20000),
+	})
+	return result
+}
+
+// autoCommit records the iteration's changes as a git commit so every loop
+// step is a rollback point. Failures only warn — committing is a convenience.
+func (o *Orchestrator) autoCommit(iteration int, plan map[string]any, workerOK bool) {
+	if !gitx.IsRepo(o.cfg.ProjectRoot) {
+		return
+	}
+	title := strings.TrimSpace(firstNonEmpty(str(plan, "delegate_title", ""), str(plan, "summary", ""), "delegated work"))
+	message := fmt.Sprintf("goloop iteration %d: %s", iteration, truncate(title, 60))
+	if !workerOK {
+		message += " (worker failed)"
+	}
+	committed, err := gitx.CommitAll(o.cfg.ProjectRoot, message)
+	if err != nil {
+		o.display.Warn("Auto-commit failed: " + err.Error())
+		return
+	}
+	if committed {
+		o.display.Info("Committed: " + message)
+		o.transcript.Log("commit", iteration, map[string]any{"message": message})
+	}
+}
+
+func (o *Orchestrator) logWorkerResult(role string, iteration int, result worker.Result) {
+	o.transcript.Log("worker_result", iteration, map[string]any{
+		"role":      role,
+		"exit":      result.ReturnCode,
+		"output":    truncate(firstNonEmpty(result.Stdout, result.Stderr), 20000),
+		"reasoning": truncate(result.Reasoning, 20000),
+	})
+}
+
 func (o *Orchestrator) planIteration(ctx context.Context, iteration int, extraNote string) (map[string]any, error) {
 	contextText := o.buildContext(iteration, extraNote)
 	messages := []llm.Message{
@@ -271,7 +450,17 @@ func (o *Orchestrator) planIteration(ctx context.Context, iteration int, extraNo
 	o.display.PlanningStart()
 	plan, err := o.supervisor.ChatJSON(ctx, messages)
 	o.display.PlanningEnd()
-	return plan, err
+	if err != nil {
+		return plan, err
+	}
+
+	o.transcript.Log("plan", iteration, map[string]any{"plan": plan})
+	if usage := o.supervisorUsage(); usage.Total() > o.usageSeen.Total() {
+		o.display.Info(fmt.Sprintf("Supervisor tokens: +%d (run total %d)",
+			usage.Total()-o.usageSeen.Total(), usage.Total()))
+		o.usageSeen = usage
+	}
+	return plan, nil
 }
 
 func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[string]any, allowFollowUp bool) (map[string]any, error) {
@@ -303,6 +492,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 			if err := o.userContext.Append(iteration, question, answer); err != nil {
 				return plan, err
 			}
+			o.transcript.Log("ask_user", iteration, map[string]any{"question": question, "answer": answer})
 			if answer != "" {
 				notes = "User answered: " + truncate(answer, 500)
 			} else {
@@ -340,6 +530,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 			}
 			notes = summarizeWorker(result)
 			o.display.ShowWorkerResult(string(o.cfg.WorkerBackend)+" (toolsmith)", result.OK(), notes, result.Reasoning)
+			o.logWorkerResult("toolsmith", iteration, result)
 			if result.OK() {
 				plan["_restart_for_tools"] = true
 				notes += fmt.Sprintf("\n\nLoop will exit %d and restart to load new tools.", o.cfg.ToolsRestartExitCode)
@@ -368,12 +559,27 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 			}
 			notes = summarizeWorker(result)
 			o.display.ShowWorkerResult(string(o.cfg.WorkerBackend), result.OK(), notes, result.Reasoning)
+			o.logWorkerResult("builder", iteration, result)
 			if !result.OK() {
 				if status == "success" {
 					status = "failed"
 				}
 				o.checkpoint.AddBlocker(fmt.Sprintf("%s worker exited %d: %s",
 					o.cfg.WorkerBackend, result.ReturnCode, truncate(notes, 200)))
+			}
+
+			if result.OK() && o.cfg.VerifyCommand != "" {
+				verify := o.runVerify(ctx, iteration)
+				notes += "\n\n" + verify.summary()
+				if !verify.ok {
+					status = "failed"
+					o.checkpoint.AddBlocker(fmt.Sprintf("Verify command failed (exit %d): %s",
+						verify.exit, truncate(verify.output, 200)))
+				}
+			}
+
+			if o.cfg.AutoCommit {
+				o.autoCommit(iteration, plan, result.OK())
 			}
 		}
 
@@ -391,6 +597,7 @@ func (o *Orchestrator) executePlan(ctx context.Context, iteration int, plan map[
 		}
 		notes = summarizeWorker(result)
 		o.display.ShowWorkerResult(string(o.cfg.WorkerBackend)+" (evaluator)", result.OK(), notes, result.Reasoning)
+		o.logWorkerResult("evaluator", iteration, result)
 	}
 
 	o.checkpoint.UpdateFromPlan(
@@ -425,6 +632,11 @@ func (o *Orchestrator) buildContext(iteration int, extraNote string) string {
 		parts = append(parts, "## user_context.md\n```markdown\n"+userText+"\n```")
 	}
 	parts = append(parts, "## Supervisor tools (.goloop/tools/)\n"+tools.Describe(o.cfg.ToolsDirPath()))
+	if gitx.IsRepo(o.cfg.ProjectRoot) {
+		if summary := gitx.ChangeSummary(o.cfg.ProjectRoot); summary != "" {
+			parts = append(parts, "## Uncommitted changes (git)\n```\n"+summary+"\n```")
+		}
+	}
 	outputTree := treeSummary(o.cfg.OutputDir, "project/", 3)
 	parts = append(parts, "## Output project\n```\n"+outputTree+"\n```")
 	repoTree := treeSummary(o.cfg.ProjectRoot, "", 3)

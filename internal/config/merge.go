@@ -85,6 +85,16 @@ func mergeRaw(dst, src *rawConfig) {
 	mergeTools(&dst.Tools, &src.Tools)
 	mergeLoop(&dst.Loop, &src.Loop)
 	mergePaths(&dst.Paths, &src.Paths)
+	mergeVerify(&dst.Verify, &src.Verify)
+}
+
+func mergeVerify(dst, src *verifyYAML) {
+	if src.Command != "" {
+		dst.Command = src.Command
+	}
+	if src.TimeoutSeconds != 0 {
+		dst.TimeoutSeconds = src.TimeoutSeconds
+	}
 }
 
 func mergeSupervisor(dst, src *supervisorYAML) {
@@ -174,6 +184,15 @@ func mergeLoop(dst, src *loopYAML) {
 	}
 	if src.Notifications != nil {
 		dst.Notifications = src.Notifications
+	}
+	if src.AutoCommit != nil {
+		dst.AutoCommit = src.AutoCommit
+	}
+	if src.Transcript != nil {
+		dst.Transcript = src.Transcript
+	}
+	if src.MaxTokens != 0 {
+		dst.MaxTokens = src.MaxTokens
 	}
 	if src.AdditionalPrompt != "" {
 		dst.AdditionalPrompt = src.AdditionalPrompt

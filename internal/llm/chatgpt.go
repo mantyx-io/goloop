@@ -22,7 +22,10 @@ type ChatGPTClient struct {
 	AuthPath   string
 	HTTPClient *http.Client
 	creds      *auth.Credentials
+	usage      Usage
 }
+
+func (c *ChatGPTClient) TotalUsage() Usage { return c.usage }
 
 func NewChatGPT(model, authPath string) (*ChatGPTClient, error) {
 	path := auth.ResolveAuthPathForRead(authPath)
@@ -114,8 +117,9 @@ func (c *ChatGPTClient) postResponses(ctx context.Context, payload map[string]an
 			return "", fmt.Errorf("ChatGPT API error %d: %s", resp.StatusCode, string(data))
 		}
 
-		text, err := readSSEText(resp.Body)
+		text, usage, err := readSSEText(resp.Body)
 		resp.Body.Close()
+		c.usage.Add(usage)
 		return text, err
 	}
 	return "", fmt.Errorf("ChatGPT request failed after token refresh")
@@ -169,12 +173,13 @@ func splitInstructionsInput(messages []Message) (string, []map[string]any, error
 	return strings.Join(instructions, "\n\n"), input, nil
 }
 
-func readSSEText(r io.Reader) (string, error) {
+func readSSEText(r io.Reader) (string, Usage, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var textParts []string
 	var finalOutput []map[string]any
+	var usage Usage
 	sawDelta := false
 
 	var block []string
@@ -212,6 +217,7 @@ func readSSEText(r io.Reader) (string, error) {
 						}
 					}
 				}
+				usage.Add(usageFromResponse(response))
 			}
 		}
 		return nil
@@ -221,23 +227,37 @@ func readSSEText(r io.Reader) (string, error) {
 		line := scanner.Text()
 		if line == "" {
 			if err := flush(); err != nil {
-				return "", err
+				return "", usage, err
 			}
 			continue
 		}
 		block = append(block, line)
 	}
 	if err := flush(); err != nil {
-		return "", err
+		return "", usage, err
 	}
 	if err := scanner.Err(); err != nil {
-		return "", err
+		return "", usage, err
 	}
 
 	if sawDelta {
-		return strings.Join(textParts, ""), nil
+		return strings.Join(textParts, ""), usage, nil
 	}
-	return textFromResponseItems(finalOutput), nil
+	return textFromResponseItems(finalOutput), usage, nil
+}
+
+func usageFromResponse(response map[string]any) Usage {
+	raw, ok := response["usage"].(map[string]any)
+	if !ok {
+		return Usage{}
+	}
+	asInt := func(key string) int {
+		if n, ok := raw[key].(float64); ok {
+			return int(n)
+		}
+		return 0
+	}
+	return Usage{Input: asInt("input_tokens"), Output: asInt("output_tokens")}
 }
 
 func decodeSSEBlock(lines []string) (map[string]any, error) {

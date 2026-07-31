@@ -19,7 +19,11 @@ type AnthropicClient struct {
 	BaseURL     string
 	Temperature float64
 	HTTPClient  *http.Client
+
+	usage Usage
 }
+
+func (c *AnthropicClient) TotalUsage() Usage { return c.usage }
 
 func NewAnthropic(model, apiKey, baseURL string, temperature float64) (*AnthropicClient, error) {
 	if apiKey == "" {
@@ -98,10 +102,15 @@ func (c *AnthropicClient) ChatJSON(ctx context.Context, messages []Message) (map
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
+		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(respBody, &data); err != nil {
 		return nil, err
 	}
+	c.usage.Add(Usage{Input: data.Usage.InputTokens, Output: data.Usage.OutputTokens})
 	var textParts []string
 	for _, block := range data.Content {
 		if block.Type == "text" && block.Text != "" {
