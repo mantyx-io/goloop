@@ -3,4 +3,3 @@
 *.exe
 .DS_Store
 example/.goloop/
-example/project/

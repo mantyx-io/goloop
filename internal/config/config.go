@@ -25,7 +25,8 @@ const (
 )
 
 type Config struct {
-	Goal string
+	Goal     string
+	GoalSlug string
 
 	SupervisorBackend     SupervisorBackend
 	SupervisorModel       string
@@ -75,6 +76,10 @@ type Overrides struct {
 	ConfigPath        string
 	ProjectRoot       string
 	Goal              string
+	GoalSlug          string
+	CheckpointPath    string
+	UserContextPath   string
+	OutputDir         string
 	MaxIterations     *int
 	Prompt            string
 	PromptFile        string
@@ -318,8 +323,26 @@ func Load(overrides Overrides) (*Config, error) {
 		goal = strings.TrimSpace(raw.Objective)
 	}
 
+	checkpointPath := filepath.Join(goloopDir, filepath.Base(checkpoint))
+	if overrides.CheckpointPath != "" {
+		checkpointPath = overrides.CheckpointPath
+	}
+	userContextPath := filepath.Join(goloopDir, filepath.Base(userContext))
+	if overrides.UserContextPath != "" {
+		userContextPath = overrides.UserContextPath
+	}
+	outputDirPath := filepath.Join(root, outputDir)
+	if overrides.OutputDir != "" {
+		if filepath.IsAbs(overrides.OutputDir) {
+			outputDirPath = overrides.OutputDir
+		} else {
+			outputDirPath = filepath.Join(root, overrides.OutputDir)
+		}
+	}
+
 	cfg := &Config{
-		Goal: goal,
+		Goal:     goal,
+		GoalSlug: strings.TrimSpace(overrides.GoalSlug),
 
 		SupervisorBackend:     backend,
 		SupervisorModel:       model,
@@ -357,9 +380,9 @@ func Load(overrides Overrides) (*Config, error) {
 		VerifyCommand:        strings.TrimSpace(raw.Verify.Command),
 		VerifyTimeoutSeconds: defaultInt(raw.Verify.TimeoutSeconds, 300),
 
-		CheckpointPath:  filepath.Join(goloopDir, filepath.Base(checkpoint)),
-		UserContextPath: filepath.Join(goloopDir, filepath.Base(userContext)),
-		OutputDir:       filepath.Join(root, outputDir),
+		CheckpointPath:  checkpointPath,
+		UserContextPath: userContextPath,
+		OutputDir:       outputDirPath,
 		ProjectRoot:     root,
 		GoloopDir:       goloopDir,
 		ConfigSources:   sources,
