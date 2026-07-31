@@ -74,17 +74,6 @@ func ClaudeCodeWorkerModels() []Info {
 	}
 }
 
-func CursorWorkerModels() []Info {
-	return []Info{
-		{ID: "composer-2.5-fast", DisplayName: "Composer 2.5 Fast", Provider: "cursor", Description: "Default — fast Cursor agent"},
-		{ID: "composer-2.5", DisplayName: "Composer 2.5", Provider: "cursor", Description: "Balanced Cursor agent"},
-		{ID: "gpt-5.3-codex-high-fast", DisplayName: "GPT-5.3 Codex High Fast", Provider: "cursor"},
-		{ID: "claude-4.6-sonnet-medium-thinking", DisplayName: "Claude 4.6 Sonnet (thinking)", Provider: "cursor"},
-		{ID: "claude-opus-4-8-thinking-high", DisplayName: "Claude Opus 4.8 (thinking)", Provider: "cursor"},
-		{ID: "gpt-5.5-medium", DisplayName: "GPT-5.5 Medium", Provider: "cursor"},
-	}
-}
-
 func Filter(items []Info, query string) []Info {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
@@ -253,10 +242,10 @@ func fetchAnthropic(ctx context.Context, apiKey string) ([]Info, error) {
 
 func defaultChatGPT() []Info {
 	return []Info{
-		{ID: "gpt-4.1", DisplayName: "GPT-4.1", Provider: "chatgpt"},
 		{ID: "gpt-5.5", DisplayName: "GPT-5.5", Provider: "chatgpt"},
-		{ID: "o3", DisplayName: "o3", Provider: "chatgpt"},
-		{ID: "o4-mini", DisplayName: "o4-mini", Provider: "chatgpt"},
+		{ID: "gpt-5.4", DisplayName: "GPT-5.4", Provider: "chatgpt"},
+		{ID: "gpt-5.4-mini", DisplayName: "GPT-5.4 Mini", Provider: "chatgpt"},
+		{ID: "gpt-4.1", DisplayName: "GPT-4.1", Provider: "chatgpt"},
 	}
 }
 
