@@ -17,7 +17,11 @@ type OpenAIClient struct {
 	BaseURL     string
 	Temperature float64
 	HTTPClient  *http.Client
+
+	usage Usage
 }
+
+func (c *OpenAIClient) TotalUsage() Usage { return c.usage }
 
 func NewOpenAI(model, apiKey, baseURL string, temperature float64) (*OpenAIClient, error) {
 	if apiKey == "" {
@@ -76,10 +80,15 @@ func (c *OpenAIClient) ChatJSON(ctx context.Context, messages []Message) (map[st
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(respBody, &data); err != nil {
 		return nil, err
 	}
+	c.usage.Add(Usage{Input: data.Usage.PromptTokens, Output: data.Usage.CompletionTokens})
 	if len(data.Choices) == 0 {
 		return nil, fmt.Errorf("OpenAI returned no choices")
 	}
