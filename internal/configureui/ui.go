@@ -49,6 +49,7 @@ func (i menuItem) Description() string { return i.desc }
 func (i menuItem) FilterValue() string { return i.title + " " + i.desc + " " + i.value }
 
 type modelsLoadedMsg struct {
+	kind  string // "supervisor" or "worker"
 	items []models.Info
 	err   error
 }
@@ -191,7 +192,8 @@ func newWizard(opts Options) model {
 	m.spinner = sp
 
 	m.list = newMenuList(28, 14, backendItems(), 0)
-	m.workerModels = workerModelsFor(opts.Initial.WorkerBackend)
+	// Prefer static/fallback here; live Cursor models are fetched when entering the step.
+	m.workerModels = workerModelsFallback(opts.Initial.WorkerBackend)
 	m.apiKey.Placeholder = apiKeyPlaceholder(opts.Initial.SupervisorBackend)
 	m.refreshAuthSummary()
 	m.syncStepUI()
@@ -253,13 +255,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modelsLoadedMsg:
 		m.loading = false
-		m.supervisorModels = msg.items
 		if msg.err != nil {
 			m.status = "Using fallback model list: " + msg.err.Error()
 		} else {
 			m.status = fmt.Sprintf("Loaded %d models", len(msg.items))
 		}
-		idx := indexForModel(msg.items, m.opts.SupervisorModel)
+		selected := m.opts.SupervisorModel
+		if msg.kind == "worker" {
+			m.workerModels = msg.items
+			if m.step != stepWorkerModel {
+				return m, nil
+			}
+			selected = m.opts.CursorModel
+			if m.opts.WorkerBackend == "claude_code" {
+				selected = m.opts.ClaudeCodeModel
+			}
+		} else {
+			m.supervisorModels = msg.items
+			if m.step != stepSupervisorModel {
+				return m, nil
+			}
+		}
+		idx := indexForModel(msg.items, selected)
 		m.list = newModelList(clamp(m.width-4, 30, 80), clamp(m.height-12, 8, 20), msg.items, idx)
 		m.search.SetValue("")
 		m.search.Blur()
@@ -384,9 +401,17 @@ func (m model) onListSelect() (model, tea.Cmd) {
 	case stepWorkerBackend:
 		m.opts.WorkerBackend = item.value
 		m.step = stepWorkerModel
-		m.workerModels = workerModelsFor(item.value)
+		m.workerModels = workerModelsFallback(item.value)
+		m.search.SetValue("")
+		m.search.Blur()
+		if item.value == "claude_code" {
+			m.syncStepUI()
+			return m, nil
+		}
+		m.loading = true
+		m.status = "Loading Cursor models…"
 		m.syncStepUI()
-		return m, nil
+		return m, tea.Batch(m.spinner.Tick, fetchWorkerModelsCmd("cursor"))
 	case stepWorkerModel:
 		if m.opts.WorkerBackend == "claude_code" {
 			m.opts.ClaudeCodeModel = item.value
@@ -834,11 +859,11 @@ func workerBackendItems() []menuItem {
 	}
 }
 
-func workerModelsFor(backend string) []models.Info {
+func workerModelsFallback(backend string) []models.Info {
 	if backend == "claude_code" {
 		return models.ClaudeCodeWorkerModels()
 	}
-	return models.CursorWorkerModels()
+	return models.DefaultCursorWorkerModels()
 }
 
 func saveAPIKeyForBackend(backend, key string) error {
@@ -952,7 +977,19 @@ func fetchSupervisorModelsCmd(backend string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		items, err := models.Fetch(ctx, models.FetchParams{Backend: backend})
-		return modelsLoadedMsg{items: items, err: err}
+		return modelsLoadedMsg{kind: "supervisor", items: items, err: err}
+	}
+}
+
+func fetchWorkerModelsCmd(backend string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if strings.ToLower(backend) == "claude_code" {
+			return modelsLoadedMsg{kind: "worker", items: models.ClaudeCodeWorkerModels()}
+		}
+		items, err := models.FetchCursor(ctx, "cursor")
+		return modelsLoadedMsg{kind: "worker", items: items, err: err}
 	}
 }
 
